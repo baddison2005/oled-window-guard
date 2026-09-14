@@ -163,3 +163,11 @@ Debug builds now use `com.astrobrett.OLEDWindowGuard.Development` and the displa
 - Architectures: `x86_64 arm64`
 
 The copied distribution app and the installed `/Applications/OLED Window Guard.app` both passed strict Developer ID signature validation, stapled-ticket validation and Gatekeeper assessment (`source=Notarized Developer ID`). Their executable SHA-256 values match: `df8c64270870332841e489e9b93d05939825eeb251140a97f5cc31f5a8decba7`. The installed notarized app opens as version 0.1.2, retains Accessibility access and starts paused.
+
+## GitHub release and end-to-end updater verification — September 14
+
+- Published `v0.1.20` as a prerelease with DMG, ZIP and SHA256SUMS. GitHub's asset digests matched the local downloads.
+- Installed a signed/notarised local test baseline reporting 0.1.19, using the same beta updater configuration. This baseline was not published.
+- About → Check for updates detected v0.1.20. Install update and restart downloaded the actual GitHub asset, verified it, replaced the app and launched `/Applications/OLED Window Guard.app` with `--updated-relaunch`.
+- The running app reported Version 0.1.20 / Build 21 and remained paused. Accessibility access and selected display/group settings were retained. A second update check reported “You’re up to date (0.1.20).”
+- Installed executable SHA-256 matched the packaged release. Strict codesign verification and Gatekeeper assessment passed outside the tool sandbox: Notarized Developer ID. Earlier validation notes that called end-to-end testing outstanding are superseded by this result.
