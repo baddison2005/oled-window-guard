@@ -22,3 +22,7 @@ committed. `Scripts/create-demo-gif.py` adds the captions to extracted PNG frame
 The developer retains copyright in the app and these recordings. Third-party
 application interfaces and logos remain the property of their respective owners;
 the recordings do not imply endorsement.
+
+Group-rotation timing refinement: the long intermediate hold is shortened to
+0.5 seconds. The two completed-layout frames hold for 1.5 and 2.5 seconds,
+respectively. Recorded frame images are unchanged; idle timing is edited.
