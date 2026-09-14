@@ -12,7 +12,11 @@ parser.add_argument('--subtitle', required=True)
 parser.add_argument('--start', type=float, default=0)
 parser.add_argument('--end', type=float, required=True)
 parser.add_argument('--fps', type=int, default=3)
+parser.add_argument('--speed', type=float, default=1.0)
+parser.add_argument('--end-hold', type=float, default=0, help='Extra seconds to hold the final frame')
 a = parser.parse_args()
+if a.fps <= 0 or a.speed <= 0 or a.end_hold < 0 or a.start < 0 or a.end <= a.start:
+    parser.error("Use positive fps/speed, a valid time range and nonnegative end hold.")
 font_path = '/System/Library/Fonts/Supplemental/Arial.ttf'
 font = lambda size: ImageFont.truetype(font_path, size)
 frames = []
@@ -29,6 +33,10 @@ for i in range(round(a.start*a.fps), round(a.end*a.fps)):
     draw.text((28, screen.height+109), a.subtitle, font=font(18), fill='#c2d1da')
     palette = frame.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
     frames.append(frame.quantize(palette=palette, dither=Image.Dither.FLOYDSTEINBERG))
+if not frames:
+    parser.error("No frames found in the requested time range.")
+durations = [max(20, round(1000 / a.fps / a.speed / 10) * 10)] * len(frames)
+durations[-1] += round(a.end_hold * 1000 / 10) * 10
 a.output.parent.mkdir(parents=True, exist_ok=True)
-frames[0].save(a.output, save_all=True, append_images=frames[1:], duration=round(1000/a.fps), loop=0, optimize=True)
+frames[0].save(a.output, save_all=True, append_images=frames[1:], duration=durations, loop=0, optimize=True)
 print(f'{a.output}: {len(frames)} frames, {a.output.stat().st_size/1e6:.2f} MB')

@@ -11,7 +11,11 @@ the captured desktop; window motion is actual recorded behavior.
 - `overview.png`: the app's Overview with the current product wording.
 
 GIFs are cropped in time to show the warning and movement, sampled at three
-frames per second and resized to 1280 pixels wide. Playback retains real timing.
+frames per second (six for the fresh group-rotation recording) and resized to
+1280 pixels wide. Playback is accelerated to approximately 1.5×, as labelled
+in each GIF, with an extra 1.5-second hold on the completed arrangement (two seconds for
+the group rotation).
+The group-rotation clip was re-recorded in full after the interrupted session.
 Raw recordings are retained locally under `build/demo-captures` and are not
 committed. `Scripts/create-demo-gif.py` adds the captions to extracted PNG frames.
 
