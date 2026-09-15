@@ -26,7 +26,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Label(model.running ? "Guarding" : "Paused", systemImage: model.running ? "circle.fill" : "pause.circle")
                         .font(.caption.weight(.medium)).foregroundStyle(model.running ? Color.mint : Color.secondary)
-                    Text("Version \(ReleaseUpdater.version) · Beta").font(.caption2).foregroundStyle(.tertiary)
+                    Text("Version \(ReleaseUpdater.version) · \(updater.includesPrereleases ? "Beta" : "Stable")").font(.caption2).foregroundStyle(.tertiary)
                 }.padding(24)
             }
             .navigationSplitViewColumnWidth(230)
@@ -212,7 +212,13 @@ struct DashboardView: View {
             }
             settingsCard {
                 numberRow("Maximum shift range", value: $model.preferences.driftRangePercent, range: 1...100, unit: "%")
-                Text("A percentage of each display’s usable width and height. Destinations are randomized within this range of the original position; each move is also limited to this range. At 100%, any on-screen position that fits is within range. Previous destinations are avoided when another safe location is available.").font(.caption).foregroundStyle(.secondary)
+                if model.preferences.mode == .drift {
+                    Text("Preferred minimum: \(model.preferences.driftRangePercent * 0.2, specifier: "%.1f")% · Typical distance: \(model.preferences.driftRangePercent * 0.6, specifier: "%.1f")% · Maximum: \(model.preferences.driftRangePercent, specifier: "%.1f")%").font(.caption.weight(.medium))
+                    Text("Distances follow a bell curve centred between the preferred minimum and maximum, capped at 1.5 standard deviations. Each cap receives about 6.68% of initial samples. Direction is random; horizontal and vertical distances are scaled to the display’s usable width and height. Screen boundaries and other windows change which moves can succeed.").font(.caption).foregroundStyle(.secondary)
+                    Text("When a sampled move does not fit, both shorter and longer safe shifts are considered, up to the maximum. Moves below the preferred minimum are reported in the preview. The maximum distance, window sizes and non-overlap checks remain strict. Immediate reversals are avoided when alternatives fit. The maximum applies from the current position, so windows can explore the display over successive moves.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text("A percentage of each display’s usable width and height. Group-zone drift remains within this range of the original position and current position. Previous destinations are avoided when alternatives fit. This setting does not control Swap positions or group rotation.").font(.caption).foregroundStyle(.secondary)
+                }
                 Text("For example, 10% on a 5120 × 2160 display permits up to 512 points horizontally and 216 vertically. Available space, other windows and group boundaries can reduce movement. Moving a window yourself resets its origin.").font(.caption).foregroundStyle(.secondary)
             }
             settingsCard {
@@ -354,7 +360,7 @@ struct DashboardView: View {
     }
     private func modeDescription(_ mode: MovementMode) -> String {
         switch mode {
-        case .drift: "Random positions within 1–100% of the display dimensions. At 100%, any free position on the display can be considered."
+        case .drift: "Random directions with bell-curve distances. Prefers 20–100% of your maximum range, with smaller moves when space is limited."
         case .swap: "Rearrange two or more windows together, including different sizes, without resizing."
         case .group: "Drift inside saved zones, or rotate windows between them."
         }

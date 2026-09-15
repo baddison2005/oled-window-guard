@@ -82,17 +82,20 @@ final class MovementTests: XCTestCase {
     func testTouchingEdgesAreNotOverlap() {
         XCTAssertFalse(Geometry.overlaps(CGRect(x: 0, y: 0, width: 10, height: 10), CGRect(x: 10, y: 0, width: 10, height: 10)))
     }
-    func testNoCumulativeDriftBeyondAnchor() {
+    func testRepeatedShiftRespectsPerMoveRangeAndCanLeaveOriginalArea() {
         var w = window("a", 200, 200)
         let anchor = w.frame
+        var leftOriginalArea = false
         for seed in 1...500 {
             let p = plan([w], anchors: [w.id: WindowAnchor(originFrame: anchor, lastFrame: w.frame)], seed: UInt64(seed))
             if let move = p.moves.first {
-                XCTAssertLessThanOrEqual(abs(move.to.minX - anchor.minX), 120)
-                XCTAssertLessThanOrEqual(abs(move.to.minY - anchor.minY), 74)
+                XCTAssertLessThanOrEqual(MovementPlanner.shiftMagnitude(from: move.from, to: move.to, display: display, percent: 10), 1 + 1e-9)
+                XCTAssertTrue(Geometry.contains(display.usableFrame, move.to))
+                leftOriginalArea = leftOriginalArea || abs(move.to.minX - anchor.minX) > 120 || abs(move.to.minY - anchor.minY) > 74
                 w = MovementPlanner.applying([move], to: [w])[0]
             }
         }
+        XCTAssertTrue(leftOriginalArea)
     }
     func testStrictSwapUsesEmptyStagingSpace() {
         var p = preferences; p.mode = .swap

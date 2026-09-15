@@ -6,6 +6,7 @@ struct MovementPlanner {
     func plan<R: RandomNumberGenerator>(snapshot: DesktopSnapshot, preferences p: Preferences,
                                        anchors: [String: WindowAnchor], group: ImportedGroup?, rng: inout R) -> MovementPlan {
         var result = MovementPlan()
+        var reducedShifts = 0
         var world = snapshot.windows
         for display in snapshot.displays where p.selectedDisplays.contains(display.id) {
             let candidates = world.filter { window in
@@ -97,7 +98,8 @@ struct MovementPlanner {
                     let anchor = anchors[window.id]?.originFrame ?? window.frame
                     if let target = Self.driftTarget(window: window, anchor: anchor,
                         previous: anchors[window.id]?.previousFrame, area: area, display: display,
-                        percent: p.driftRangePercent, world: world, rng: &rng) {
+                        percent: p.driftRangePercent, world: world, gaussian: p.mode == .drift, rng: &rng) {
+                        if p.mode == .drift && Self.shiftMagnitude(from: window.frame, to: target, display: display, percent: p.driftRangePercent) < 0.2 { reducedShifts += 1 }
                         let move = Move(windowID: window.id, from: window.frame, to: target)
                         result.moves.append(move)
                         result.steps.append(move)
@@ -107,6 +109,7 @@ struct MovementPlanner {
             }
         }
         if !result.moves.isEmpty { result.reason = "Ready to move \(result.windowCount) window\(result.windowCount == 1 ? "" : "s")." }
+        if reducedShifts > 0 { result.reason += " Limited space required smaller shifts for \(reducedShifts) window(s), below the preferred minimum." }
         return result
     }
 
@@ -190,15 +193,21 @@ struct MovementPlanner {
     }
 
     static func driftTarget<R: RandomNumberGenerator>(window: WindowInfo, anchor: CGRect, previous: CGRect?,
-        area: CGRect, display: DisplayInfo, percent: Double, world: [WindowInfo], rng: inout R) -> CGRect? {
+        area: CGRect, display: DisplayInfo, percent: Double, world: [WindowInfo], gaussian: Bool = false, rng: inout R) -> CGRect? {
         let dx = display.usableFrame.width * min(100, max(1, percent)) / 100
         let dy = display.usableFrame.height * min(100, max(1, percent)) / 100
-        let left = ceil(max(area.minX, anchor.minX - dx, window.frame.minX - dx))
-        let right = floor(min(area.maxX - window.frame.width, anchor.minX + dx, window.frame.minX + dx))
-        let top = ceil(max(area.minY, anchor.minY - dy, window.frame.minY - dy))
-        let bottom = floor(min(area.maxY - window.frame.height, anchor.minY + dy, window.frame.minY + dy))
+        // Shift position can roam; only group-zone drift remains tied to its origin.
+        let reference = gaussian ? window.frame : anchor
+        let left = ceil(max(area.minX, reference.minX - dx, window.frame.minX - dx))
+        let right = floor(min(area.maxX - window.frame.width, reference.minX + dx, window.frame.minX + dx))
+        let top = ceil(max(area.minY, reference.minY - dy, window.frame.minY - dy))
+        let bottom = floor(min(area.maxY - window.frame.height, reference.minY + dy, window.frame.minY + dy))
         guard left <= right, top <= bottom else { return nil }
         let obstacles = world.filter { $0.id != window.id }.map(\.frame)
+        if gaussian {
+            return gaussianTarget(window: window, previous: previous, area: area, display: display,
+                                  percent: percent, obstacles: obstacles, bounds: CGRect(x: left, y: top, width: right-left, height: bottom-top), rng: &rng)
+        }
         var targets: [CGRect] = []
         for _ in 0..<128 {
             targets.append(CGRect(x: CGFloat.random(in: left...right, using: &rng).rounded(),
@@ -221,6 +230,77 @@ struct MovementPlanner {
             hypot(($0.minX - window.frame.minX) / dx, ($0.minY - window.frame.minY) / dy)
             < hypot(($1.minX - window.frame.minX) / dx, ($1.minY - window.frame.minY) / dy)
         }
+    }
+
+    /// Unit magnitude: 0.2...1, mean 0.6, caps at ±1.5σ. Tail samples stay at the caps.
+    static func gaussianShiftMagnitude<R: RandomNumberGenerator>(rng: inout R) -> Double {
+        let u = max(Double.leastNonzeroMagnitude, Double.random(in: 0..<1, using: &rng))
+        let angle = Double.random(in: 0..<(2 * .pi), using: &rng)
+        let normal = sqrt(-2 * log(u)) * cos(angle)
+        return min(1, max(0.2, 0.6 + normal * (0.8 / 3)))
+    }
+
+    static func shiftMagnitude(from: CGRect, to: CGRect, display: DisplayInfo, percent: Double) -> Double {
+        let range = min(100, max(1, percent)) / 100
+        return hypot((to.minX-from.minX)/(display.usableFrame.width*range),
+                     (to.minY-from.minY)/(display.usableFrame.height*range))
+    }
+
+    private static func gaussianTarget<R: RandomNumberGenerator>(window: WindowInfo, previous: CGRect?,
+        area: CGRect, display: DisplayInfo, percent: Double, obstacles: [CGRect], bounds: CGRect, rng: inout R) -> CGRect? {
+        let dx = display.usableFrame.width * min(100, max(1, percent)) / 100
+        let dy = display.usableFrame.height * min(100, max(1, percent)) / 100
+        func magnitude(_ target: CGRect) -> Double { shiftMagnitude(from: window.frame, to: target, display: display, percent: percent) }
+        func safe(_ target: CGRect) -> Bool {
+            target.minX >= bounds.minX && target.minX <= bounds.maxX
+                && target.minY >= bounds.minY && target.minY <= bounds.maxY
+                && magnitude(target) <= 1 + 1e-9 && !Geometry.close(target, window.frame)
+                && Geometry.contains(area, target) && !obstacles.contains { Geometry.overlaps($0, target) }
+        }
+        func fresh(_ target: CGRect) -> Bool { previous.map { !Geometry.close($0, target) } ?? true }
+        var reversals: [CGRect] = []
+        // Preserve the sampled distance while trying independent directions first.
+        for _ in 0..<16 {
+            let radius = gaussianShiftMagnitude(rng: &rng)
+            for _ in 0..<32 {
+                let theta = Double.random(in: 0..<(2 * .pi), using: &rng)
+                let rounding: FloatingPointRoundingRule = radius == 0.2 ? .awayFromZero : .towardZero
+                let target = window.frame.offsetBy(dx: (cos(theta)*radius*dx).rounded(rounding),
+                                                   dy: (sin(theta)*radius*dy).rounded(rounding))
+                guard safe(target), magnitude(target) >= 0.2 else { continue }
+                if fresh(target) { return target }
+                reversals.append(target)
+            }
+        }
+        // Include obstacle edges to find thin safe corridors missed by random directions.
+        let xs = Set([bounds.minX, bounds.maxX, window.frame.minX] + obstacles.flatMap { [$0.maxX, $0.minX-window.frame.width] }).sorted()
+        let ys = Set([bounds.minY, bounds.maxY, window.frame.minY] + obstacles.flatMap { [$0.maxY, $0.minY-window.frame.height] }).sorted()
+        var alternatives: [CGRect] = []
+        for x in xs { for y in ys {
+            let target = CGRect(origin: CGPoint(x: x, y: y), size: window.frame.size)
+            if safe(target) { alternatives.append(target) }
+        } }
+        // Search larger distances too: narrow openings can defeat the initial direction samples.
+        // Then progressively relax only the preferred minimum.
+        for upper in [1.0, 0.5, 0.2, 0.1, 0.05] {
+            for _ in 0..<96 {
+                let radius = Double.random(in: (upper/2)...upper, using: &rng)
+                let theta = Double.random(in: 0..<(2 * .pi), using: &rng)
+                let target = window.frame.offsetBy(dx: (cos(theta)*radius*dx).rounded(.towardZero),
+                                                   dy: (sin(theta)*radius*dy).rounded(.towardZero))
+                if safe(target) { alternatives.append(target) }
+            }
+        }
+        let newTargets = alternatives.filter(fresh)
+        let pool = newTargets.isEmpty ? alternatives + reversals : newTargets
+        for minimum in [0.2, 0.1, 0.05, 0.0] {
+            let band = pool.filter { magnitude($0) >= minimum }
+            if !band.isEmpty {
+                let desired = gaussianShiftMagnitude(rng: &rng)
+                return band.shuffled(using: &rng).min { abs(magnitude($0)-desired) < abs(magnitude($1)-desired) }
+            }
+        }
+        return nil
     }
 
     /// Rearrange different-sized windows without predefined zones. Destinations

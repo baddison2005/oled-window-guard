@@ -27,7 +27,7 @@ FINAL_APP_DIRECTORY="$OUTPUT_DIRECTORY/$VERSION"
 [[ ! -e "$FINAL_APP_DIRECTORY" ]] || { print -u2 "Refusing to overwrite $FINAL_APP_DIRECTORY"; exit 1; }
 
 [[ $(/usr/libexec/PlistBuddy -c 'Print OLEDUpdateRepository' "$APP_PATH/Contents/Info.plist") == 'baddison2005/oled-window-guard' ]] || { print -u2 'Missing update repository in built app.'; exit 1; }
-[[ $(/usr/libexec/PlistBuddy -c 'Print OLEDUpdateChannel' "$APP_PATH/Contents/Info.plist") == 'beta' ]] || { print -u2 'Missing beta update channel in built app.'; exit 1; }
+[[ $(/usr/libexec/PlistBuddy -c 'Print OLEDUpdateChannel' "$APP_PATH/Contents/Info.plist") == 'stable' ]] || { print -u2 'Missing stable update channel in built app.'; exit 1; }
 
 lipo "$APP_PATH/Contents/MacOS/OLED Window Guard" -verify_arch arm64 x86_64
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
@@ -53,7 +53,7 @@ mkdir -p "$DMG_CONTENTS"
 ditto "$APP_PATH" "$DMG_CONTENTS/OLED Window Guard.app"
 ln -s /Applications "$DMG_CONTENTS/Applications"
 cat > "$DMG_CONTENTS/Install.txt" <<'INSTALL'
-OLED Window Guard — Public beta
+OLED Window Guard — Stable release
 
 Drag OLED Window Guard.app to Applications, then open it from Applications.
 Grant Accessibility access when requested. Select your display and preview
@@ -63,7 +63,7 @@ Keep your windows moving. Care for your OLED.
 Automatically shift and rotate application windows to reduce how long
 content stays in one place.
 
-This beta is free for evaluation and testing. A future release may be paid.
+This release is free to use. A future release may be paid.
 Movement cannot guarantee prevention of burn-in. Keep your display's OLED
 care and sleep features enabled.
 INSTALL

@@ -8,7 +8,7 @@ the captured desktop; window motion is actual recorded behavior.
 - `grouped-window-swap.gif`: four adjacent Finder windows stay together while
   swapping positions alongside a differently sized Firefox window.
 - `restore-last-move.gif`: warned restore returns the previous arrangement.
-- `overview.png`: the app's Overview with the current product wording.
+- `OWG_*.png` and `Preview_safe_window_moves.png`: author-provided feature screenshots captured during beta testing; version labels may differ from the stable release.
 
 GIFs are cropped in time to show the warning and movement, sampled at three
 frames per second (six for the fresh group-rotation recording) and resized to
@@ -26,3 +26,13 @@ the recordings do not imply endorsement.
 Group-rotation timing refinement: the long intermediate hold is shortened to
 0.5 seconds. The two completed-layout frames hold for 1.5 and 2.5 seconds,
 respectively. Recorded frame images are unchanged; idle timing is edited.
+
+Shift position recording (September 15, 2026): `shift-position.gif` shows two
+verified three-window movement cycles at a 50% maximum range. Captured on the
+prepared LG display using 0.1.22; movement code is identical in 0.1.23. Frames
+6–19s and 29–41s from the 60-second recording are played at approximately 1.5×
+speed, with idle time removed and a 2.5-second extra hold on the final arrangement.
+The source is `build/demo-captures/shift-position-sep15.mov` (not committed).
+
+The Shift position GIF uses exact video timestamps, reduced frame sampling and
+960-pixel width to keep the download compact; playback timing is preserved.

@@ -6,37 +6,82 @@ Automatically shift and rotate application windows to reduce how long content st
 
 A native macOS menu-bar app that periodically moves eligible windows on selected displays. Built with SwiftUI, AppKit, public Accessibility APIs and Core Graphics. No dependencies, screen capture, telemetry, window-title logging, private window-server APIs.
 
-**Version 0.1.20 is a free public beta.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+**Stable release: 0.1.23.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
 
-## Download and beta feedback
+## Download
 
-[Download the public beta](https://github.com/baddison2005/oled-window-guard/releases) · [Report an issue](https://github.com/baddison2005/oled-window-guard/issues)
+[Download for macOS](https://github.com/baddison2005/oled-window-guard/releases/latest) · [Report an issue](https://github.com/baddison2005/oled-window-guard/issues)
 
-The beta is free for evaluation and testing. A future stable release may be paid.
+This release is free to use. Future releases or additional features may be paid.
 Source is publicly viewable with copyright reserved; see [LICENSE](LICENSE).
 The app currently moves windows; display/window dimming and heatmaps are not included.
 
-![OLED Window Guard Overview](docs/media/overview.png)
+![OLED Window Guard Overview](docs/media/OWG_overview.png)
 
 ## In action
 
 Real desktop recordings on a 5120 × 2160 display. Windows are repositioned directly;
 the GIFs do not imply smooth animated paths or guaranteed burn-in prevention.
 
+**Shift position** — varied distances and directions, while preserving window sizes.
+
+![Shift position across successive moves](docs/media/shift-position.gif)
+
+**Window Layouts group rotation** — coordinated destinations within a saved group.
+
 ![Coordinated Window Layouts group rotation](docs/media/layout-group-rotation.gif)
+
+**Swap positions** — keep adjacent, similarly sized windows together.
 
 ![Swap positions while keeping similar windows together](docs/media/grouped-window-swap.gif)
 
+**Restore last move** — return to the preceding arrangement after a warning.
+
 ![Restore the previous window arrangement](docs/media/restore-last-move.gif)
+
+## Explore the app
+
+Choose a movement style, preview its destinations, and control when moves are allowed.
+These screenshots were captured during beta testing; version labels may differ from the current release.
+Click an image to view it at full size.
+
+| Shift position | Grouped swaps |
+| --- | --- |
+| ![Shift position settings](docs/media/OWG_movement_shift_position.png) | ![Swap settings and similar-window grouping](docs/media/OWG_movement_swap_positions.png) |
+
+| Window Layouts integration | Safety and warnings |
+| --- | --- |
+| ![Layout source, groups and padding](docs/media/OWG_layout_groups.png) | ![Activity checks, alerts and exclusions](docs/media/OWG_safety_alerts.png) |
+
+<details>
+<summary>Preview, menu bar, group movement and update controls</summary>
+
+Preview safe destinations before moving:
+
+![Preview safe window moves](docs/media/Preview_safe_window_moves.png)
+
+Quick controls from the menu bar:
+
+![Menu bar controls](docs/media/OWG_panel_menu.png)
+
+Rotate between group zones or drift within them:
+
+![Window Layouts movement settings](docs/media/OWG_movement_WindowLayoutGroup.png)
+
+Version information and manual update checks:
+
+![About and update controls](docs/media/OWG_about.png)
+
+</details>
 
 ## Features
 
 - Overview shows the current Swap grouping status and a shortcut to Movement settings. Descriptions under the action buttons explain immediate warning countdowns and restoring previous positions and adjusted sizes, including cancellation checks.
 - **Keep adjacent similar-sized windows together:** optional in Swap positions. Windows sharing an edge or separated by up to eight points form a group using the size tolerance. Differently sized neighbours remain independent. Groups and individual windows can move into suitable empty space without a swap partner. Groups preserve relative positions and spacing, count each member toward the window limit, and remain stationary if a member is excluded or a safe intact swap cannot be found. The planner uses each group's bounding rectangle, so irregular groups may have fewer available moves.
-- **About:** “Keep your windows moving. Care for your OLED.”, app description, version/build and manual GitHub update controls. The public beta checks GitHub prereleases as well as stable releases.
+- **About:** “Keep your windows moving. Care for your OLED.”, app description, version/build and manual GitHub update controls. The stable app checks stable GitHub releases; earlier beta builds can also find this release.
 - Select one or more connected monitors, remembered by display UUID. Newly connected monitors are never selected automatically.
 - Set a check interval from 1 to 240 minutes and a 3–60 second advance warning.
-- **Shift position:** randomized destinations within a 1–100% range of each display's usable width and height (default 10%). At 100%, the entire usable display is in range. Each step and total excursion respect the range. Immediate reversal is avoided when alternatives fit. Manually moving a window resets its origin. Windows move individually into free space.
+- **Shift position:** random directions with a clamped Gaussian movement magnitude. For maximum range M, the preferred minimum is 0.2M, the mean is 0.6M, and sigma is 0.8M/3. Initial samples land on each cap about 6.68% of the time; window geometry filters successful moves. Distances use display-normalised coordinates (horizontal displacement divided by usable width, vertical displacement divided by usable height), so the maximum bounds the combined movement magnitude. The maximum applies from the current position, allowing successive moves to explore the display. Safe fallback distances can be shorter or longer than the sampled distance, up to the maximum. Crowded displays progressively allow smaller shifts, reported in the preview, while preserving window sizes, screen containment and non-overlap. Previous destinations are avoided when alternatives fit. Group-zone drift retains its existing sampling.
 - **Swap positions:** coordinate two or more windows on the same monitor, preserving their sizes. Similar-sized exchanges are tried first, then mixed-size arrangements when they can move more windows. No predefined zones are required. For example, a two-thirds-width window can trade sides with a smaller window, whose vertical position can vary in the remaining third. Exclusions and the maximum window count still apply.
 - **Window Layouts groups:** built-in Halves, Horizontal Halves, Vertical Halves, Quarters, Thirds and Two Thirds, plus saved custom groups. Drift inside a containing zone or jointly rearrange mixed window shapes among compatible zones, including empty destinations. Rotation prioritizes moving all eligible windows within the configured limit and checks the completed arrangement for collisions. Overlapping group zones are alternative placements. Window menu commands such as maximise are actions, not layout groups.
 - Nonactivating warning panels on affected monitors, with a Skip button; optional Glass sound and macOS notification. These do not raise or activate the windows being moved.
@@ -57,7 +102,7 @@ Free-form swaps likewise use a bounded 50,000-state search over screen edges, wi
 
 Every pending plan is revalidated on its affected displays after the warning and before each move. Windows that span onto those displays remain collision obstacles; unrelated activity on other displays does not cancel the plan. The app reads back positions after each step and after settling. A failed or changed window pauses guarding and triggers best-effort safe reversal of completed steps. A user-moved or closed window is never forcefully restored. macOS applications may apply their own positioning rules; absolute guarantees against concurrent external changes are not possible.
 
-Percentage distances use each display's usable logical width and height, independently of backing scale. A 10% range on a 5120 × 2160 usable area permits up to 512 points horizontally and 216 vertically. This controls geometric movement, not a validated protection level. Existing settings migrate to 10% while preserving other preferences. Legacy pixel fields are retained for decoding compatibility but no longer control movement. Collisions, screen boundaries and group boundaries can substantially reduce the available distance.
+Percentage distances use each display's usable logical width and height, independently of backing scale. A 10% range on a 5120 × 2160 usable area permits up to 512 points horizontally and 216 vertically. For Shift position, the combined normalised movement magnitude also cannot exceed the selected range. This controls geometric movement, not a validated protection level. Existing settings migrate to 10% while preserving other preferences. Legacy pixel fields are retained for decoding compatibility but no longer control movement. Collisions, screen boundaries and group boundaries can substantially reduce the available distance.
 
 Small moves mainly vary static edge placement. Large static areas inside a window, menu bars, the Dock and desktop elements may remain unchanged. This app cannot guarantee burn-in prevention and does not replace brightness management, display sleep or manufacturer pixel-care routines.
 
@@ -86,7 +131,7 @@ xcodebuild build -project OLEDWindowGuard.xcodeproj -scheme OLEDWindowGuard \
 ./Scripts/test.sh
 ```
 
-Tests cover geometric boundaries, mixed monitor scales and negative coordinates, bounded repeated drift, exclusions, swap staging, multi-window rotations, final collisions, group membership, the existing Window Layouts schema, stale-plan rejection and timer state. Randomized cases also validate every intermediate position.
+Tests cover geometric boundaries, mixed monitor scales and negative coordinates, per-move bounded roaming, Gaussian sampling, exclusions, swap staging, multi-window rotations, final collisions, group membership, the existing Window Layouts schema, stale-plan rejection and timer state. Randomized cases also validate every intermediate position.
 
 ## Persistence and integration
 

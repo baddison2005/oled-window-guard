@@ -1,3 +1,25 @@
+# Stable 0.1.23 — September 15, 2026
+
+- 80 automated tests passed with the built bundle configured for stable updates.
+- Developer ID signed universal app and DMG passed Apple notarization, stapling and package verification.
+- Two live Shift position cycles each moved all three prepared LG windows; all final positions verified. The movement code is unchanged from tested 0.1.22.
+- Added author-provided screenshot gallery and a Shift position GIF with completed moves and shortened idle time.
+
+# Local beta 0.1.22 — Roaming Shift position
+
+- 80 tests passed. Successive shifts can leave the original area while respecting the maximum distance on every move. A full-height window can reach an exact distant slot beyond its old anchor limit across 30 seeds.
+- Shift position measures its range from the current position. Group-zone drift retains its original anchor limits.
+- Fallback sampling now covers larger distances up to the maximum as well as smaller distances. Gaussian sampling remains the first preference; containment, sizes and collision checks remain strict.
+- This fixes a planner restriction that could confine TextMate; the user's specific live arrangement still needs testing.
+
+# Local beta 0.1.21 — Gaussian Shift position
+
+- 79 tests passed, including 100,000 deterministic distribution samples, capped tails/mean, direction diversity, crowded-space minimum relaxation, fully blocked layouts, and multi-window collision/maximum-distance checks. Existing repeated-excursion and reversal tests also pass.
+- Replaced the furthest-of-random-shortlist selection in Shift position with Gaussian magnitude sampling and independent random directions. Kept group-zone drift unchanged.
+- Preferred range is 20–100% of maximum, centred at 60%, with sigma 80%/3. Initial tails clamp to the boundaries. Logical-point rounding and safety filtering mean successful moves need not reproduce the exact sampling distribution.
+- Intermediate and final layouts remain collision-free through sequential planning against the updated world. Limited space can relax the minimum, never the maximum; preview explains smaller moves.
+- No settings migration is needed; the existing maximum range and original-position anchors are retained.
+
 # Public beta 0.1.20 — release configuration
 
 - Live Grouping 1 rotation moved all four prepared windows (Finder, Excel, TextMate and PowerPoint), verified final positions, and restored all four original positions. Recorded the complete warning and movement for the release GIF.

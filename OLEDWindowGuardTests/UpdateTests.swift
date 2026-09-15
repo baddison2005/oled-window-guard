@@ -6,7 +6,7 @@ final class UpdateTests: XCTestCase {
         let updater = ReleaseUpdater()
         XCTAssertEqual(updater.repository, "baddison2005/oled-window-guard")
         XCTAssertTrue(updater.configured)
-        XCTAssertTrue(updater.includesPrereleases)
+        XCTAssertFalse(updater.includesPrereleases)
     }
 
     func testVersionComparison() {

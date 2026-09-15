@@ -40,13 +40,13 @@ The About legal notice includes a qualified exclusion of warranties and liabilit
 
 The public repository is `baddison2005/oled-window-guard`. Release builds set
 `OLED_UPDATE_REPOSITORY` to that repository and
-`OLED_UPDATE_CHANNEL` to `beta`. The About page checks manually; no
+`OLED_UPDATE_CHANNEL` to `stable`. The About page checks manually; no
 background checks occur. The beta channel selects the highest valid numeric
 three-component version from the most recent 100 GitHub releases, including
-prereleases and excluding drafts. Stable builds omit the beta setting and use
+prereleases and excluding drafts. Stable builds use the explicit `stable` setting and query
 GitHub's latest stable release. Tags remain numeric (for example `v0.1.20`);
 GitHub's prerelease flag identifies beta releases. The packaged asset is
-`OLED-Window-Guard-0.1.20-macOS.zip` and GitHub must supply its SHA-256 digest.
+`OLED-Window-Guard-0.1.23-macOS.zip` and GitHub must supply its SHA-256 digest.
 Older local previews require manual installation of the first connected beta.
 
 
