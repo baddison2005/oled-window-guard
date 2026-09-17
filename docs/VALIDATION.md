@@ -1,3 +1,105 @@
+# Version 1.0.0 — Official stable release
+
+- Promoted the complete, tested 0.1.35 feature set to version 1.0.0 (build 37).
+- Terminal can quantise its window dimensions to character-cell increments and extend outside a requested Window Layouts zone. OLED Window Guard detects the mismatch, aborts the group move and safely restores completed steps. This application-specific compatibility limitation is documented for the release.
+- All 130 automated tests passed on the 1.0.0 versioned source.
+- The universal release app and DMG were signed with Developer ID, accepted by Apple notarisation, stapled, and validated. Gatekeeper accepted the app as a notarised Developer ID build; the DMG checksum verified successfully.
+- Distribution artifacts: `OLED-Window-Guard-1.0.0-macOS.dmg`, `OLED-Window-Guard-1.0.0-macOS.zip`, the ZIP digest, and `SHA256SUMS-1.0.0.txt`.
+
+# Local 0.1.35 — Automatic deadlines and movement diagnostics
+
+- 130 tests passed, including repeated polls after an expired deadline, transition to warning, retention of other display deadlines, Dock icon preference, single-window swap explanation/shift, and three-column Cintiq group rotation using captured geometry.
+- Root cause of automatic stall: sync rebuilt a deadline using a newer Date than the tick's sampled time, keeping even an overdue clock just beyond the due comparison. The clock now receives the original absolute deadline.
+- Initial Cintiq geometry showed Terminal overlapping Excel by 4 points. Updated user arrangement has three non-overlapping columns and the geometry test moves all three. Overlap safety has not been relaxed.
+- MacBook first showed maximised Chrome; the user switched to a lone TextEdit window while that display was configured for Swap positions. The user subsequently selected Shift position. Preview now explains the missing swap partner and recommends Shift position.
+- Overview lists exclusions/overlaps. Menu panel has expandable display controls, and About offers an optional Dock icon with guarding/brightness actions.
+- Signed/notarized universal app and DMG validated; 0.1.35 (build 36) installed. Live automatic guarding reached the MacBook warning, moved TextEdit successfully, incremented the moved-window count to 1 and restarted that display’s timer. LG completed its scheduled check and restarted its timer while its overlapping ChatGPT windows correctly prevented movement. Guarding was paused after verification.
+- The current Cintiq columns do not fit Grouping 1: its third-width zones are only two-thirds height. Changed only the Cintiq profile to built-in Thirds; live preview then reported “Ready to move 3 windows.” This was a preview check, not a live three-window move.
+- Menu panel visibly lists all three display disclosure controls and dimming switches. About visibly offers the Dock icon option, left off. Dock preference persistence passed automated testing; Dock menu interaction has not been live-tested.
+
+# Local 0.1.34 — Independent movement and Dock obstacles
+
+- 125 tests passed, including independent display settings/persistence, separate deadlines, completion/restart isolation, interval changes, disconnection/reconnection, pause, and Dock desktop versus real Dock geometry.
+- Snapshot filtering ignores screen-sized Dock desktop/transition surfaces using the already verified classifier. Real Dock regions and NSScreen.visibleFrame still constrain placement.
+- Each display has custom movement settings and a timer. Automatic operations are serialised, snapshot their movement configuration for placement/recovery, and restart only their own interval. Undo retains the operation’s original movement settings.
+- Overview manual preview/move target selector; per-display summaries; Movement page per-monitor settings. Shared safety settings and layout-library source are explicit.
+- Public NSWorkspace Space notification supplies neither identifiers nor per-display details. No private APIs or unreliable automatic Space profiles added; settings apply to each monitor’s visible Space.
+- Signed/notarized app and DMG validated; installed 0.1.34 (build 35). Live UI showed a custom MacBook 4-minute interval independent of the LG 3-minute interval, with simultaneous countdowns of 239s and 179s. Temporary settings removed and original LG-only guarding restored. MacBook snapshot count dropped from two windows to one after filtering the Dock desktop surface. No manual window moves were triggered during this check.
+
+# Local 0.1.33 — Monitor settings, exclusions and brightness restore
+
+- 119 tests passed, including per-monitor selection migration/persistence, custom settings and master switches, bounds, independent monitor timers, visible-only exclusions under both dimming modes, separate movement exclusions and brightness restore timing.
+- Monitor selection migrates from movement selection once and is then independent. Each monitor owns its delay/fade state. Master toggles apply to all profiles.
+- Global Control–Option–Command–B uses a registered Carbon hotkey with conflict reporting and an enable switch. The same restore action is available in the app and menu; it resets timers immediately and guarantees five seconds of brightness before fades may begin.
+- App exclusions use bundle IDs and exempt visible regions only, including during whole-display dimming. Other foreground windows continue to dim even over excluded windows.
+- Signed/notarized app and DMG validated; 0.1.33 (build 34) installed. UI verified LG-only selection migration with Built-in Display and Cintiq off, custom LG level changes independent of defaults, restoration of original settings, and the Restore brightness button. User confirmed Control–Option–Command–B restores brightness and restarts dimming delays while another app is active.
+
+# Local 0.1.32 — Finder virtual desktop focus
+
+- Instrumented a user Control-arrow reproduction. Finder reported AX focused geometry `(-1239, -2160, 5120, 3856)`, spanning both monitors. This made the selected LG display ineligible and reset its activation delay despite correct MacBook interaction scope.
+- Finder focus now requires a matching ordinary layer-zero Finder window from the desktop-excluded CG window list. The virtual desktop is treated as desktop focus; real and spanning Finder windows remain valid.
+- Regression tests cover the captured virtual-desktop geometry, retained 30-second eligibility, and genuine Finder/spanning window focus.
+- User confirmed Control-arrow switches on the MacBook now leave the LG dimmed. The live trace confirms Finder virtual-desktop focus resolves to nil, the MacBook scope remains active, and LG eligibility/readiness stay intact.
+- Final 0.1.32 app and DMG signed, notarized and validated; installed locally.
+- 111 tests passed with diagnostic tracing removed from final source. Temporary diagnostic capture disabled; local logs are excluded from Git.
+
+# Local 0.1.31 — Space transition timing
+
+- Captured window geometry during the reported Control-arrow reproduction. Dock created sliding layer-4 surfaces sized 5120×2160 at x=-4193, 1183 and 3871; the previous overlap-based filter missed these partially visible surfaces. Finder became frontmost during the transition and the LG overlay disappeared.
+- Classify Dock desktop/transition surfaces by their full size, including partially off-screen surfaces. A regression uses the captured geometry.
+- Anchor interaction scope immediately on Control-left/right, and when moving Dock surfaces first appear, before delayed Space notifications or transient Finder focus can reset eligibility timers.
+- Overlay panels explicitly use stationary collection behaviour so Mission Control does not treat them as transient floating panels.
+- 109 tests passed. Signed/notarized app and DMG validated; 0.1.31 (build 32) installed locally. User testing found the delay still reset; the subsequent 0.1.32 diagnostic identified Finder virtual-desktop focus as the remaining cause.
+
+# Local 0.1.30 — Desktop and Space interaction tracking
+
+- 108 automated tests passed, including stale Finder focus after desktop clicks, persistent display scope across polls, Space changes preserving dimming delay/fade progress, return to genuine window interaction, and Dock desktop-surface filtering.
+- Desktop click location now overrides stale AX focus until the next window/keyboard interaction. Space notifications anchor focus to the display under the pointer, rejecting windows reported on another display. Control-arrow navigation retains the anchor.
+- Live CG metadata revealed a screen-sized Dock layer-20 surface. These desktop/transition surfaces are excluded from click hit testing and overlay masks; ordinary Dock/menu panels remain protected. Missing window-list data preserves existing dimming instead of clearing timers.
+- Physical two-display desktop/Space behaviour still requires user confirmation; automated tests reproduce the stale-focus inputs rather than synthesising macOS Spaces.
+
+# Local 0.1.29 — Display-local dimming and fades
+
+- 103 tests passed before packaging, including display-local desktop scope, independent fades, retained fade progress on unrelated displays, zero fade, settings rounding/persistence, focused-window masks and blending window dimming into display dimming without a flash.
+- Removed the all-display dimming reset on Space changes. Missing AX focus is scoped using recent clicks and the last focused window, rather than globally brightening windows. Momentarily unavailable frontmost application preserves existing overlays.
+- Separate 0–3 second fade-in sliders in 0.5-second increments; defaults remain immediate. Returning to focus clears dimming promptly. Fade refreshes use the existing lightweight timer at 0.05 seconds while animating or moving.
+- Installed signed and notarized 0.1.29 (build 30); app and DMG validation passed. Verified both fade sliders increment by 0.5 seconds in the installed app, then restored their immediate defaults. Existing 40% levels and 0s/30s activation delays were retained.
+- Packaging uses Xcode’s lipo and checks each architecture separately for compatibility with the updated toolchain.
+- Local testing only. Physical multi-monitor desktop/Space behaviour still needs user verification.
+
+# Local 0.1.28 — Continuous dimming during movement
+
+- Live move test moved all three LG windows and verified final positions with existing dimming settings retained. Restore then returned all three windows to their original positions, verified by the app. About text was checked in the installed app.
+- 96 automated tests passed, including moving-window masks with retained activation-delay eligibility.
+- Dimming remains active during warnings, movement and restore/recovery. Moving-window geometry is refreshed after position writes and every 0.1 seconds while placement is in progress; normal polling remains half-second.
+- Warning/control cut-outs and exclusion of dimming overlays from movement snapshots remain in place. Sleep, session, update and unavailable-focus suspension are unchanged.
+- About now describes window/display dimming, independent levels and delays, and menu-bar controls.
+- Local testing build; no GitHub commit or release.
+
+# Local 0.1.26 — Dimming delays and menu controls
+
+- 95 tests passed, including independent effect delays, per-window resets, zero-delay activation, delay changes, suspension resets, persistence and pending-window occlusion.
+- Each window and display has its own continuous-eligibility timer using monotonic system uptime; enabling a mode does not borrow elapsed time from the other mode.
+- Menu panel shows the selected movement mode and explicit On/Off state for both dimming effects, with editable controls bound to the same saved preferences as the dashboard.
+- Window dimming clears when no application window has focus; documentation qualifies the desktop-click behaviour when separate display dimming is enabled.
+- Local build only; no commit or GitHub release.
+
+# Local 0.1.25 — Window and display dimming
+
+- Live LG checks verified window-only dimming, whole-display dimming and turning both options off. Focus-switch behaviour across third-party apps still needs user testing.
+- 90 automated tests passed: focused-window masking, background occlusion, non-stacking amounts, whole-display priority, system-control holes, spanning focus, negative display coordinates, defaults and persistence/clamping.
+- Uses public window metadata and Accessibility focus only. Click-through, nonactivating overlay panels are excluded from movement snapshots.
+- Independent opt-in switches use selected monitors; dimming works while movement is paused. Hides for warning/move/sleep/session/update/permission conditions.
+- Rectangular bounds and a half-second polling interval are explicit limitations; the amount is overlay opacity, not calibrated luminance.
+- Public release remains 0.1.23 pending local testing of 0.1.24 reordering and 0.1.25 dimming.
+
+# Local 0.1.24 — Coordinated Shift position
+
+- 83 automated tests passed, including packed unequal-width horizontal exchanges, vertical exchanges, disabled axes, maximum range, exclusions, window limits and settings migration.
+- Optional horizontal/vertical order changes trigger on larger Gaussian samples. Candidate distances follow the existing Gaussian preference within 20–100% of the maximum; a plan requires at least one move of 40% or more of that maximum.
+- Final containment and non-overlap remain mandatory. Enabling an axis permits brief overlap during coordinated placement, explicitly described in the UI. The existing controller checks the complete final layout and uses its existing rollback handling.
+- Public release remains 0.1.23; this build is for local testing.
+
 # Stable 0.1.23 — September 15, 2026
 
 - 80 automated tests passed with the built bundle configured for stable updates.

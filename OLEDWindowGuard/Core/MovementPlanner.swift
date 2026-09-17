@@ -49,7 +49,10 @@ struct MovementPlanner {
                     available = available.filter { window in zones.filter { Geometry.contains($0, window.frame) }.count == 1 }
                 }
                 let capacity = min(remaining, available.count)
-                guard capacity >= 2 else { continue }
+                guard capacity >= 2 else {
+                    result.reason = "Swap positions needs at least two eligible windows on \(display.name). Choose Shift position for a single window."
+                    continue
+                }
                 var accepted: MovementPlan?
                 // Try rotations of up to 12 windows, then pairs; keep the search bounded.
                 for _ in 0..<40 where accepted == nil {
@@ -87,6 +90,15 @@ struct MovementPlanner {
                     result.reason = "No safe swap fits. Swaps need a free staging space, or you can allow brief overlap during swaps."
                 }
             } else {
+                // Larger Gaussian samples can trigger a coordinated reorder. Otherwise retain ordinary shifts.
+                if p.shiftReorderingEnabled, Self.gaussianShiftMagnitude(rng: &rng) >= 0.6,
+                   let coordinated = Self.freeSwap(candidates: candidates, world: world, display: display,
+                       limit: remaining, allowOverlap: true, allowVacantDestinations: true, shiftPolicy: p, rng: &rng) {
+                    result.moves += coordinated.moves
+                    result.steps += coordinated.steps
+                    world = Self.applying(coordinated.moves, to: world)
+                    continue
+                }
                 for window in candidates {
                     guard result.moves.count < p.maximumWindows else { break }
                     var area = display.usableFrame
@@ -306,12 +318,13 @@ struct MovementPlanner {
     /// Rearrange different-sized windows without predefined zones. Destinations
     /// occupy space another participant vacates; stationary windows remain barriers.
     static func freeSwap<R: RandomNumberGenerator>(candidates: [WindowInfo], world: [WindowInfo],
-        display: DisplayInfo, limit: Int, allowOverlap: Bool, allowVacantDestinations: Bool = false,
+        display: DisplayInfo, limit: Int, allowOverlap: Bool, allowVacantDestinations: Bool = false, shiftPolicy: Preferences? = nil,
         rng: inout R) -> MovementPlan? {
         let minimumMoves = allowVacantDestinations ? 1 : 2
         guard limit >= minimumMoves, candidates.count >= minimumMoves else { return nil }
         let area = display.usableFrame
         let entries = candidates.sorted { $0.frame.width * $0.frame.height > $1.frame.width * $1.frame.height }.map { w in
+            let desired = shiftPolicy == nil ? 0 : gaussianShiftMagnitude(rng: &rng)
             let right = area.maxX - w.frame.width, bottom = area.maxY - w.frame.height
             let xs = Set([area.minX, right, area.minX + right - w.frame.minX]
                 + candidates.flatMap { [$0.frame.minX, $0.frame.maxX - w.frame.width, $0.frame.maxX, $0.frame.minX - w.frame.width] })
@@ -323,10 +336,19 @@ struct MovementPlanner {
                 let target = CGRect(x: x.rounded(), y: y.rounded(), width: w.frame.width, height: w.frame.height)
                 if Geometry.contains(area, target), !Geometry.close(w.frame, target),
                    (allowVacantDestinations || candidates.contains(where: { $0.id != w.id && Geometry.overlaps($0.frame, target) })) {
+                    if let policy = shiftPolicy {
+                        let distance = shiftMagnitude(from: w.frame, to: target, display: display, percent: policy.driftRangePercent)
+                        guard distance >= 0.2, distance <= 1 + 1e-9 else { continue }
+                    }
                     targets.append(target)
                 }
             } }
-            return (window: w, targets: targets.shuffled(using: &rng))
+            targets.shuffle(using: &rng)
+            if let policy = shiftPolicy {
+                targets.sort { abs(shiftMagnitude(from: w.frame, to: $0, display: display, percent: policy.driftRangePercent) - desired)
+                    < abs(shiftMagnitude(from: w.frame, to: $1, display: display, percent: policy.driftRangePercent) - desired) }
+            }
+            return (window: w, targets: targets)
         }
         let ids = Set(candidates.map(\.id))
         let obstacles = world.filter { !ids.contains($0.id) }.map(\.frame)
@@ -339,8 +361,12 @@ struct MovementPlanner {
                   moves.count + entries.count - index > (best?.windowCount ?? 0) else { return }
             visited += 1
             if index == entries.count {
-                guard moves.count >= minimumMoves,
-                      let steps = safeSteps(moves: moves, world: world, area: area, allowTransientOverlap: allowOverlap) else { return }
+                guard moves.count >= minimumMoves else { return }
+                if let policy = shiftPolicy {
+                    guard moves.contains(where: { shiftMagnitude(from: $0.from, to: $0.to, display: display, percent: policy.driftRangePercent) >= 0.4 }),
+                          shiftOrderAllowed(moves: moves, candidates: candidates, policy: policy) else { return }
+                }
+                guard let steps = safeSteps(moves: moves, world: world, area: area, allowTransientOverlap: allowOverlap) else { return }
                 best = MovementPlan(moves: moves, steps: steps, reason: "")
                 return
             }
@@ -359,6 +385,22 @@ struct MovementPlanner {
         }
         search(0)
         return best
+    }
+
+    /// A coordinated shift must reverse an enabled axis and preserve ordering on disabled axes.
+    static func shiftOrderAllowed(moves: [Move], candidates: [WindowInfo], policy: Preferences) -> Bool {
+        let final = applying(moves, to: candidates)
+        var reordered = false
+        for i in candidates.indices {
+            for j in candidates.indices where j > i {
+                let horizontal = (candidates[i].frame.midX - candidates[j].frame.midX) * (final[i].frame.midX - final[j].frame.midX) < -1
+                let vertical = (candidates[i].frame.midY - candidates[j].frame.midY) * (final[i].frame.midY - final[j].frame.midY) < -1
+                if horizontal && !policy.allowHorizontalShiftReordering { return false }
+                if vertical && !policy.allowVerticalShiftReordering { return false }
+                reordered = reordered || horizontal || vertical
+            }
+        }
+        return reordered
     }
 
     static func applying(_ moves: [Move], to windows: [WindowInfo]) -> [WindowInfo] {

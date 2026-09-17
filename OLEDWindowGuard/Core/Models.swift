@@ -17,6 +17,30 @@ enum MovementMode: String, Codable, CaseIterable, Identifiable {
 }
 
 struct Preferences: Codable, Equatable {
+    var dockIcon: Bool? = nil
+    var showsDockIcon: Bool { get { dockIcon ?? false } set { dockIcon = newValue } }
+    var movementOverrides: [String: DisplayMovementSettings]? = nil
+    var brightnessShortcut: Bool? = nil
+    var brightnessShortcutEnabled: Bool { get { brightnessShortcut ?? true } set { brightnessShortcut = newValue } }
+    var dimmingDisplayIDs: Set<String>? = nil
+    var displayDimmingOverrides: [String: DisplayDimmingSettings]? = nil
+    var dimmingExcludedApps: Set<String>? = nil
+    var windowDimFade: Double? = nil
+    var displayDimFade: Double? = nil
+    var windowDimmingFade: Double { get { windowDimFade ?? 0 } set { windowDimFade = newValue } }
+    var displayDimmingFade: Double { get { displayDimFade ?? 0 } set { displayDimFade = newValue } }
+    var windowDimDelay: Double? = nil
+    var displayDimDelay: Double? = nil
+    var windowDimmingDelay: Double { get { windowDimDelay ?? 0 } set { windowDimDelay = newValue } }
+    var displayDimmingDelay: Double { get { displayDimDelay ?? 0 } set { displayDimDelay = newValue } }
+    var dimWindows: Bool? = nil
+    var dimDisplays: Bool? = nil
+    var windowDimPercent: Double? = nil
+    var displayDimPercent: Double? = nil
+    var dimUnfocusedWindows: Bool { get { dimWindows ?? false } set { dimWindows = newValue } }
+    var dimInactiveDisplays: Bool { get { dimDisplays ?? false } set { dimDisplays = newValue } }
+    var windowDimmingPercent: Double { get { windowDimPercent ?? 30 } set { windowDimPercent = newValue } }
+    var displayDimmingPercent: Double { get { displayDimPercent ?? 40 } set { displayDimPercent = newValue } }
     var selectedDisplays: Set<String> = []
     var intervalMinutes: Double = 10
     var warningSeconds: Double = 10
@@ -39,6 +63,17 @@ struct Preferences: Codable, Equatable {
     var groupID = ""
     var rotateGroup = false
     var excludedApps: Set<String> = []
+    var shiftHorizontalOrder: Bool? = nil
+    var shiftVerticalOrder: Bool? = nil
+    var allowHorizontalShiftReordering: Bool {
+        get { shiftHorizontalOrder ?? false }
+        set { shiftHorizontalOrder = newValue }
+    }
+    var allowVerticalShiftReordering: Bool {
+        get { shiftVerticalOrder ?? false }
+        set { shiftVerticalOrder = newValue }
+    }
+    var shiftReorderingEnabled: Bool { mode == .drift && (allowHorizontalShiftReordering || allowVerticalShiftReordering) }
     var keepSwapGroups: Bool? = nil
     var layoutSourceID: String? = nil
     var layoutSource: LayoutSource {
@@ -50,14 +85,21 @@ struct Preferences: Codable, Equatable {
         set { keepSwapGroups = newValue }
     }
 
-    var permitsIntermediateOverlap: Bool { allowTransientOverlap || (mode == .group && rotateGroup) }
+    var permitsIntermediateOverlap: Bool { allowTransientOverlap || (mode == .group && rotateGroup) || shiftReorderingEnabled }
 
     func validated() -> Self {
         var p = self
+        p.displayDimmingOverrides = displayDimmingOverrides?.mapValues { $0.validated() }
         func clamp(_ n: Double, _ minValue: Double, _ maxValue: Double, fallback: Double) -> Double {
             n.isFinite ? min(max(n, minValue), maxValue) : fallback
         }
         if driftPercent != nil { p.driftRangePercent = clamp(driftRangePercent, 1, 100, fallback: 10) }
+        if windowDimFade != nil { p.windowDimmingFade = (clamp(windowDimmingFade, 0, 3, fallback: 0) * 2).rounded() / 2 }
+        if displayDimFade != nil { p.displayDimmingFade = (clamp(displayDimmingFade, 0, 3, fallback: 0) * 2).rounded() / 2 }
+        if windowDimDelay != nil { p.windowDimmingDelay = clamp(windowDimmingDelay, 0, 600, fallback: 0) }
+        if displayDimDelay != nil { p.displayDimmingDelay = clamp(displayDimmingDelay, 0, 600, fallback: 0) }
+        if windowDimPercent != nil { p.windowDimmingPercent = clamp(windowDimmingPercent, 0, 90, fallback: 30) }
+        if displayDimPercent != nil { p.displayDimmingPercent = clamp(displayDimmingPercent, 0, 90, fallback: 40) }
         p.intervalMinutes = clamp(intervalMinutes, 1, 240, fallback: 10)
         p.warningSeconds = clamp(warningSeconds, 3, 60, fallback: 10)
         p.distancePixels = clamp(distancePixels, 2, 128, fallback: 16)

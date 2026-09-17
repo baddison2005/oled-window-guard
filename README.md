@@ -6,7 +6,7 @@ Automatically shift and rotate application windows to reduce how long content st
 
 A native macOS menu-bar app that periodically moves eligible windows on selected displays. Built with SwiftUI, AppKit, public Accessibility APIs and Core Graphics. No dependencies, screen capture, telemetry, window-title logging, private window-server APIs.
 
-**Stable release: 0.1.23.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+**Stable release: 1.0.0.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
 
 ## Download
 
@@ -14,7 +14,7 @@ A native macOS menu-bar app that periodically moves eligible windows on selected
 
 This release is free to use. Future releases or additional features may be paid.
 Source is publicly viewable with copyright reserved; see [LICENSE](LICENSE).
-The app currently moves windows; display/window dimming and heatmaps are not included.
+Version 1.0.0 includes window movement plus optional per-display window and display dimming. Exposure heatmaps are not included.
 
 ![OLED Window Guard Overview](docs/media/OWG_overview.png)
 
@@ -90,15 +90,36 @@ Version information and manual update checks:
 - Suspend on sleep / inactive session; cancel pending movement on Space or monitor changes; always start a fresh interval. No burst of catch-up movements after waking.
 - Launch at login using Service Management. Always launch paused for explicit review.
 
+## Independent movement by display
+
+Movement settings can be customised for each monitor: movement type, interval, window limit, shift range, order changes, grouping, size tolerance and Window Layouts group. Displays without overrides use the defaults. Each selected display has its own timer; due moves run one display at a time with their own warning. Completing or skipping a move restarts only that display’s interval. Safety settings, movement app exclusions and the Window Layouts library source remain shared.
+
+In Overview, choose the display for **Preview safe moves** and **Move after warning**. Automatic guarding still covers every selected display. Per-display settings apply to the currently visible Space; persistent automatic per-Space profiles are not implemented because public APIs do not provide reliable Space identifiers. Dock desktop/transition surfaces are excluded from movement snapshots, while the real Dock remains protected by the usable-screen boundary.
+
+## Dimming
+
+Select dimming displays independently from movement. Each connected display is named in the Dimming page and can use default settings or custom window/display levels, delays and fades. The two main dimming switches remain master controls. Existing selections migrate once; disconnected display settings are retained for reconnection.
+
+Add app-specific dimming exclusions to keep those apps’ visible windows bright under either effect, independently of movement exclusions. **Control–Option–Command–B** (or **Restore brightness** in the app/menu) clears dimming on all dimming displays and restarts their delays immediately, with a five-second minimum bright period. Longer activation delays remain in effect. The shortcut can be disabled; a registration conflict is reported in the Dimming page.
+
+
+The Dimming page offers independent switches and 0–90% darkness controls for unfocused application windows and displays with no focused window. Both default off. Each effect has an independent 0–600 second activation delay (default zero). Window timers start when individual windows lose focus; display timers start when a selected display has no focused window. Regaining focus clears the effect and resets its timer. Clicking empty desktop space clears dimming on that display without resetting other displays. Space changes no longer clear dimming globally. Separate fade-in sliders offer 0–3 seconds in half-second steps after each activation delay; focus restores brightness promptly. The menu-bar panel offers a movement picker showing the selected mode and On/Off toggles for each dimming effect. Dimming monitors are selected on the Dimming page, independently of movement. These features run independently of the movement timer, including while movement is paused, and enabled settings persist across launches.
+
+Overlays pass clicks through and refresh focus/geometry every half-second. Window dimming covers visible background-window rectangles, subtracting foreground windows to avoid double dimming. Whole-display dimming takes precedence when both modes apply. A focused window spanning displays keeps both displays out of whole-display dimming. OLED Window Guard controls and system panels are kept clear. Movement exclusions do not apply to dimming.
+
+Dimming stays active through warnings, movement and restores, tracking moving windows and fades every 0.05 seconds without resetting their activation delays. Warning controls remain clear. Dimming suspends during sleep, inactive sessions, updates, missing Accessibility permission. Overlays are excluded from movement snapshots and disappear when the app quits. Amounts describe black-overlay opacity, not calibrated brightness or hardware settings. Rounded corners, shadows, transparency and unusual app/window layers may differ from rectangular bounds; rapid changes can take one polling interval to update. No screen images or keystrokes are captured.
+
 ## Important behavior
 
 Group rotation recognizes current zone membership with up to the imported padding plus two logical points of source-edge discrepancy, capped at 32 points, accommodating snapped windows whose apps round position and size differently. This tolerance applies only to the source zone. Group rotation may shrink a resizable window by up to twice the imported padding plus two logical points per dimension, capped at 32 points to fit a destination. Destination containment, screen boundaries and final collision checks remain exact. Each size and position write is verified separately; Restore includes original sizes. On a 1× display, points and pixels are equal.
+
+Terminal and some other applications quantise window dimensions to character or content increments. They may extend beyond a Window Layouts zone after macOS accepts a requested size, causing group movement to fail validation and roll back safely. Reapply the layout, use a compatible zone size, or exclude that window if this occurs.
 
 Full-screen, maximised, minimised, modal, unsupported, ambiguous and off-screen/spanning windows are skipped. Already-overlapping windows remain obstacles and are not rearranged. There must be room for drift: a perfectly packed display may have no safe moves. Skipping is an expected outcome.
 
 In **Swap positions** mode, the default policy checks intermediate positions too and requires a free staging rectangle. The optional overlap setting relaxes that requirement. **Group rotation** always permits brief overlap during placement so tightly snapped layouts can rearrange without staging space. macOS exposes separate position writes, not atomic swaps. All final destinations must be non-overlapping and contained in the usable monitor area. Only group rotation permits the bounded rounding adjustment described above; other modes preserve sizes. Non-resizable windows and adjustments over the padding-derived limit are rejected. Position writes do not animate a path. Group assignment searches up to 50,000 states, prioritizing the number moved; exceptionally complex arrangements may return a safe partial result.
 
-Free-form swaps likewise use a bounded 50,000-state search over screen edges, window edges, reflected positions and vertical offsets. They check every final rectangle and, when brief overlap is disabled, require a safe sequence of intermediate placements. This search may skip a complex arrangement even if another placement exists. Shift position does not jointly swap occupied space: use Swap positions for that purpose. Existing movement settings and the saved internal `drift` mode identifier remain compatible with the renamed UI.
+Free-form swaps likewise use a bounded 50,000-state search over screen edges, window edges, reflected positions and vertical offsets. They check every final rectangle and, when brief overlap is disabled, require a safe sequence of intermediate placements. This search may skip a complex arrangement even if another placement exists. Shift position can optionally coordinate horizontal and/or vertical order changes on larger Gaussian samples. Each participant moves at least 20% of the selected maximum and at least one moves 40% or more; no move exceeds the maximum. The enabled axes control coordinated order reversals; ordinary moves into empty space remain unchanged. Coordinated shifts can briefly overlap during placement, but final positions must be clear. If no arrangement fits, ordinary shifts are attempted. Both options default off. Swap positions remains independent of the shift range. Existing movement settings and the saved internal `drift` mode identifier remain compatible with the renamed UI.
 
 Every pending plan is revalidated on its affected displays after the warning and before each move. Windows that span onto those displays remain collision obstacles; unrelated activity on other displays does not cancel the plan. The app reads back positions after each step and after settling. A failed or changed window pauses guarding and triggers best-effort safe reversal of completed steps. A user-moved or closed window is never forcefully restored. macOS applications may apply their own positioning rules; absolute guarantees against concurrent external changes are not possible.
 
@@ -146,3 +167,9 @@ Window Layouts source: `~/Library/Application Support/Window Layouts/layout-libr
 ## Distribution
 
 See [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md). The App Sandbox is intentionally disabled because the core feature controls other applications through Accessibility. Release builds use Hardened Runtime, Developer ID signing, notarization and stapling. No Mac App Store submission is included.
+
+### Movement troubleshooting and quick controls
+
+Expired per-display deadlines remain absolute, so automatic movement advances into its warning instead of stalling at zero. Overview lists why windows are excluded, including overlaps, maximised windows and app exclusions. Swap positions needs two eligible windows; use Shift position for a lone window.
+
+Expand a display in the menu-bar panel to enable movement, adjust its custom settings, preview or move after warning. About includes an optional Dock icon; click it to open settings, or right-click for guarding and brightness commands.

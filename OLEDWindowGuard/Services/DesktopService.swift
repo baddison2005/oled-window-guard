@@ -39,11 +39,15 @@ final class DesktopService {
                   let bounds = item[kCGWindowBounds as String] as? [String: Any],
                   let frame = CGRect(dictionaryRepresentation: bounds as CFDictionary), Geometry.valid(frame),
                   (item[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { return nil }
+            // Dock also owns full-screen desktop/Space animation surfaces. The real
+            // Dock exclusion remains represented by NSScreen.visibleFrame.
+            guard !DimmingInteractionScope.isDesktopSurface(owner: item[kCGWindowOwnerName as String] as? String,
+                layer: layer, frame: frame, displays: screens.map(\.frame)) else { return nil }
             let title = item[kCGWindowName as String] as? String
             guard DesktopWindowFilter.includes(ownerPID: pid, ownPID: getpid(), title: title) else { return nil }
             // Exclude only the warning panels this process just closed. Keep
             // every other application window, including our dashboard, as an obstacle.
-            guard pid != getpid() || !excludingOwnWindowNumbers.contains(id) else { return nil }
+            guard pid != getpid() || !(excludingOwnWindowNumbers.union(DimmingPresenter.windowNumbers)).contains(id) else { return nil }
             // Floating windows and dialogs are obstacles too. System overlays are handled by usableFrame / session events.
             guard layer >= 0, layer < Int(CGWindowLevelForKey(.mainMenuWindow)) else { return nil }
             return Visible(id: "\(pid):\(id)", pid: pid, frame: frame, layer: layer)

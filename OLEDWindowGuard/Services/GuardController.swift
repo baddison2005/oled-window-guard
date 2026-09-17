@@ -7,11 +7,13 @@ final class GuardController: ObservableObject {
     @Published var preferences: Preferences {
         didSet {
             guard preferences != oldValue else { return }
-            if preferences.mode != oldValue.mode || preferences.groupID != oldValue.groupID || preferences.rotateGroup != oldValue.rotateGroup {
+            if preferences.movementOverrides != oldValue.movementOverrides || preferences.mode != oldValue.mode || preferences.groupID != oldValue.groupID || preferences.rotateGroup != oldValue.rotateGroup {
                 anchors.removeAll()
             }
             cancelPending(message: "Settings saved. The next interval starts now.")
             savePreferences()
+            if preferences.showsDockIcon != oldValue.showsDockIcon { NSApp.setActivationPolicy(preferences.showsDockIcon ? .regular : .accessory) }
+            if preferences.brightnessShortcutEnabled != oldValue.brightnessShortcutEnabled { configureBrightnessShortcut() }
             if preferences.layoutSource != oldValue.layoutSource {
                 anchors.removeAll()
                 refreshGroups()
@@ -33,15 +35,27 @@ final class GuardController: ObservableObject {
     @Published private(set) var canUndo = false
     @Published private(set) var loginEnabled = SMAppService.mainApp.status == .enabled
     @Published var preview: MovementPlan?
+    @Published private(set) var dimmingStatus = "Dimming is off."
+    @Published private(set) var brightnessShortcutStatus = ""
+    private let brightnessHotKey = BrightnessHotKey()
+    private let dimming = DimmingPresenter()
     private let desktop = DesktopService()
     private let warnings = WarningPresenter()
     private let activity = DisplayActivityMonitor()
     private var timer: Timer?
+    private var movingDimmingTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var pending: (plan: MovementPlan, baseline: DesktopSnapshot, handles: [String: DesktopService.Handle], isRestore: Bool)?
+    @Published var movementDisplayID = ""
+    private var movementSchedule = DisplayMovementSchedule()
+    private var operationSettings: Preferences?
+    private var operationDisplayID: String?
+    var manualMovementDisplayID: String { preferences.selectedDisplays.contains(movementDisplayID) ? movementDisplayID : preferences.selectedDisplays.sorted().first ?? "" }
+    private var movementPreferences: Preferences { operationSettings ?? preferences.movementSettings(for: manualMovementDisplayID) }
     private var pendingGroup: ImportedGroup?
     private var activeLayoutSource: LayoutSource?
     private var pendingLayoutSource: LayoutSource?
+    private var undoMovementSettings: Preferences?
     private var undo: (MovementPlan, DesktopSnapshot, [String: DesktopService.Handle])?
     private var anchors: [String: WindowAnchor] = [:]
     private var suspended = false
@@ -58,12 +72,22 @@ final class GuardController: ObservableObject {
             catch { preferences = Preferences(); loadWarning = "Saved settings could not be read. Safe defaults are active; the original file is untouched until you change a setting." }
         } else { preferences = Preferences() }
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+        // Migrate the dimming selection once, so movement settings remain independent.
+        if preferences.dimmingDisplayIDs == nil { preferences.dimmingDisplays = preferences.selectedDisplays }
+        brightnessHotKey.action = { [weak self] in self?.restoreBrightness() }
+        configureBrightnessShortcut()
         activity.start()
         refresh()
         refreshGroups()
         if let loadWarning { status = loadWarning }
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+        movingDimmingTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.busy || self.dimming.animating else { return }
+                self.updateDimming()
+            }
         }
         let workspace = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
@@ -77,7 +101,10 @@ final class GuardController: ObservableObject {
             })
         }
         observers.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.cancelPending(message: "Space changed. A fresh interval starts now.") }
+            Task { @MainActor in
+                self?.dimming.spaceChanged()
+                self?.cancelPending(message: "Space changed. A fresh interval starts now.")
+            }
         })
         observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -100,7 +127,7 @@ final class GuardController: ObservableObject {
         return String(format: "%02d:%02d", seconds / 60, seconds % 60)
     }
     var warningActive: Bool { if case .warning = clock.phase { true } else { false } }
-    var selectedGroup: ImportedGroup? { groups.first { $0.id == preferences.groupID } }
+    var selectedGroup: ImportedGroup? { groups.first { $0.id == movementPreferences.groupID } }
 
     func refresh() {
         guard !busy else { return }
@@ -145,24 +172,27 @@ final class GuardController: ObservableObject {
     func toggleRunning() {
         if running { running = false; cancelPending(message: "Paused. Windows stay where they are."); return }
         refresh()
-        guard ready() else { return }
+        guard ready(requireGroup: false) else { return }
         running = true
-        clock.start(now: Date(), interval: preferences.intervalMinutes * 60)
+        movementSchedule.stop()
+        syncMovementClock()
         status = "Guarding selected displays. You’ll receive a warning before each move."
     }
 
     func showPreview() {
+        guard !busy, !warningActive else { return }
         refresh()
         refreshGroups()
         var rng = SystemRandomNumberGenerator()
-        preview = MovementPlanner().plan(snapshot: snapshot, preferences: preferences.validated(), anchors: anchors, group: selectedGroup, rng: &rng)
+        preview = MovementPlanner().plan(snapshot: snapshot, preferences: movementPreferences, anchors: anchors, group: selectedGroup, rng: &rng)
         status = preview?.reason ?? ""
     }
 
     func moveSoon() {
-        guard !busy else { return }
+        guard !warningActive, !busy else { return }
         refresh()
         guard ready() else { return }
+        prepareOperation(displayID: manualMovementDisplayID)
         beginWarning()
     }
 
@@ -179,6 +209,8 @@ final class GuardController: ObservableObject {
             status = "Restore cancelled because the desktop changed. Manually moved windows are never pulled back."
             return
         }
+        prepareOperation(displayID: affectedDisplays.sorted().first ?? manualMovementDisplayID)
+        operationSettings = undoMovementSettings ?? operationSettings
         queueWarning(plan: undo.0, baseline: current, handles: undo.2, isRestore: true)
         self.undo = nil; canUndo = false
     }
@@ -200,33 +232,52 @@ final class GuardController: ObservableObject {
         } catch { status = "Login setting could not be changed: \(error.localizedDescription)" }
     }
 
-    private func ready() -> Bool {
+    private func ready(requireGroup: Bool = true) -> Bool {
         guard !updateInProgress else { status = "Guarding is paused while the update installs."; return false }
         guard trusted else { status = "Grant Accessibility access to discover and move windows."; return false }
         guard snapshot.displays.contains(where: { preferences.selectedDisplays.contains($0.id) }) else {
             status = "Select at least one connected display."; return false
         }
-        guard preferences.mode != .group || selectedGroup != nil else { status = "Select a saved Window Layouts group."; return false }
+        guard !requireGroup || movementPreferences.mode != .group || selectedGroup != nil else { status = "Select a saved Window Layouts group."; return false }
         guard !suspended else { status = "Waiting for an active desktop."; return false }
         return true
     }
 
+    private func configureBrightnessShortcut() {
+        brightnessHotKey.unregister()
+        brightnessShortcutStatus = preferences.brightnessShortcutEnabled
+            ? (brightnessHotKey.register() ? "Control–Option–Command–B restores brightness globally." : "Shortcut unavailable (possibly in use by another app). Use Restore brightness below or in the menu.")
+            : "Global shortcut is disabled. Restore brightness remains available in the menu."
+    }
+    func restoreBrightness() {
+        dimming.restoreBrightness()
+        updateDimming()
+        status = "Brightness restored on dimming displays. Activation delays restarted."
+    }
+
+    private func updateDimming() {
+        dimmingStatus = dimming.update(preferences: preferences.validated(), active: !suspended && !updateInProgress)
+    }
+
     private func tick() {
         now = Date()
+        if !busy { updateDimming() }
         trusted = desktop.trusted
         if !trusted && (running || warningActive) {
             running = false
             cancelPending(message: "Accessibility access was removed. Guarding has paused.")
         }
+        if !busy && !warningActive { syncMovementClock() }
         guard !busy, !suspended, clock.isDue(now: now) else { return }
         if case .warning = clock.phase { executePending() }
-        else if running {
+        else if running, let next = movementSchedule.next {
+            prepareOperation(displayID: next.id)
             beginWarning()
         }
     }
 
     private func positionsAreSafe(_ snapshot: DesktopSnapshot, ids: Set<String>, sourceRounding: Bool = false) -> Bool {
-        let regions: [String: [CGRect]] = preferences.mode == .group
+        let regions: [String: [CGRect]] = movementPreferences.mode == .group
             ? Dictionary(uniqueKeysWithValues: snapshot.displays.map { ($0.id, selectedGroup?.frames(on: $0) ?? []) }) : [:]
         return SnapshotValidation.safePositions(snapshot, moving: ids, regions: regions, sourceRounding: sourceRounding,
                                                 sourceAllowance: GroupPaddingPolicy.sourceAllowance(selectedGroup?.padding ?? 0))
@@ -249,7 +300,7 @@ final class GuardController: ObservableObject {
         refresh(); refreshGroups()
         guard ready() else { cancelPending(message: status); return }
         var rng = SystemRandomNumberGenerator()
-        let plan = MovementPlanner().plan(snapshot: snapshot, preferences: preferences.validated(), anchors: anchors, group: selectedGroup, rng: &rng)
+        let plan = MovementPlanner().plan(snapshot: snapshot, preferences: movementPreferences, anchors: anchors, group: selectedGroup, rng: &rng)
         preview = plan
         guard !plan.moves.isEmpty else { cancelPending(message: plan.reason); return }
         queueWarning(plan: plan, baseline: snapshot, handles: desktop.handles)
@@ -290,10 +341,10 @@ final class GuardController: ObservableObject {
             let fresh = desktop.snapshot(excludingOwnWindowNumbers: warningWindowNumbers)
                 .restricted(to: affectedDisplays)
             let expectedGroup = pendingGroup
-            if preferences.mode == .group { refreshGroups() }
+            if movementPreferences.mode == .group { refreshGroups() }
             let ids = Set(pending.plan.moves.map(\.windowID))
             guard token == generation, !suspended, quietAtDeadline, userIsQuiet(on: affectedDisplays), desktop.trusted,
-                  preferences.mode != .group || (expectedGroup == selectedGroup && pendingLayoutSource == activeLayoutSource),
+                  movementPreferences.mode != .group || (expectedGroup == selectedGroup && pendingLayoutSource == activeLayoutSource),
                   positionsAreSafe(fresh, ids: ids, sourceRounding: true),
                   SnapshotValidation.unchanged(pending.baseline, fresh, moving: ids, avoidFocused: preferences.avoidFocusedWindow),
                   ids.allSatisfy({ id in
@@ -307,7 +358,7 @@ final class GuardController: ObservableObject {
                     detail = "Recent activity prevented \(preferences.quietSeconds.formatted()) seconds of quiet before movement."
                 }
                 else if let change = SnapshotValidation.changeDescription(pending.baseline, fresh, moving: ids, avoidFocused: preferences.avoidFocusedWindow) { detail = change }
-                else if preferences.mode == .group && (expectedGroup != selectedGroup || pendingLayoutSource != activeLayoutSource) { detail = "The layout source, selected group or padding changed." }
+                else if movementPreferences.mode == .group && (expectedGroup != selectedGroup || pendingLayoutSource != activeLayoutSource) { detail = "The layout source, selected group or padding changed." }
                 else { detail = "A planned window no longer has a safe position or a matching Accessibility reference." }
                 finish(message: "Move cancelled. \(detail)")
                 if token == generation, !suspended, (!quietAtDeadline || !userIsQuiet(on: affectedDisplays)) {
@@ -321,20 +372,21 @@ final class GuardController: ObservableObject {
             for step in pending.plan.steps {
                 let check = desktop.snapshot(excludingOwnWindowNumbers: warningWindowNumbers)
                     .restricted(to: affectedDisplays)
-                let ignoredEligibility = preferences.permitsIntermediateOverlap ? ids : []
+                let ignoredEligibility = movementPreferences.permitsIntermediateOverlap ? ids : []
                 guard token == generation, !suspended, userIsQuiet(on: affectedDisplays),
                       SnapshotValidation.unchanged(expected, check, moving: ids, avoidFocused: preferences.avoidFocusedWindow,
                                                    ignoringEligibilityFor: ignoredEligibility),
                       handlesMatch(expected, ids: ids, handles: pending.handles),
-                      preferences.permitsIntermediateOverlap || positionsAreSafe(check, ids: ids),
+                      movementPreferences.permitsIntermediateOverlap || positionsAreSafe(check, ids: ids),
                       let handle = pending.handles[step.windowID] else {
                     await failAndRecover(completed, handles: pending.handles, detail: SnapshotValidation.changeDescription(expected, check, moving: ids, avoidFocused: preferences.avoidFocusedWindow) ?? "Activity or Accessibility references changed during placement.")
                     return
                 }
                 completed.append(step)
                 _ = desktop.move(handle, to: step.to, permitsRoundingResize: step.permitsRoundingResize, roundingResizeLimit: step.roundingResizeLimit)
+                updateDimming()
                 // Allow the visible frame to settle before validating recovery.
-            try? await Task.sleep(for: .milliseconds(450))
+                try? await Task.sleep(for: .milliseconds(450))
                 // Some apps apply only one size dimension on the first AX write.
                 // Record the exact partial change and retry once, only while the
                 // whole affected desktop and user activity still match expectations.
@@ -353,6 +405,7 @@ final class GuardController: ObservableObject {
                                          roundingResizeLimit: step.roundingResizeLimit)
                         completed.append(retry)
                         _ = desktop.move(handle, to: retry.to, permitsRoundingResize: true, roundingResizeLimit: retry.roundingResizeLimit)
+                        updateDimming()
                         // Allow the visible frame to settle before the next validation.
                         try? await Task.sleep(for: .milliseconds(450))
                         if let observed = desktop.frame(handle.element), retry.acceptsPartialResize(observed) {
@@ -384,6 +437,7 @@ final class GuardController: ObservableObject {
             } else {
                 let inverse = MovementPlan(moves: pending.plan.moves.map(\.reversed),
                                            steps: completed.reversed().map(\.reversed), reason: "Restore last move")
+                undoMovementSettings = movementPreferences
                 undo = (inverse, after, pending.handles)
                 canUndo = true
             }
@@ -405,9 +459,10 @@ final class GuardController: ObservableObject {
                   let handle = handles[step.windowID],
                   desktop.frame(handle.element).map({ Geometry.close($0, step.to) }) == true,
                   live.displays.contains(where: { Geometry.contains($0.usableFrame, step.from) }),
-                  (preferences.permitsIntermediateOverlap
+                  (movementPreferences.permitsIntermediateOverlap
                    || !live.windows.contains(where: { $0.id != step.windowID && Geometry.overlaps($0.frame, step.from) })),
                   desktop.move(handle, to: step.from, permitsRoundingResize: step.permitsRoundingResize, roundingResizeLimit: step.roundingResizeLimit) else { restored = false; continue }
+            updateDimming()
             // Allow the visible frame to settle before validating recovery.
             try? await Task.sleep(for: .milliseconds(450))
             if desktop.frame(handle.element).map({ Geometry.close($0, step.from) }) != true { restored = false }
@@ -417,12 +472,51 @@ final class GuardController: ObservableObject {
                : "Guarding paused: \(detail) Some positions could not be safely restored; please check your windows.")
     }
 
+    func movementSummary(for id: String) -> String {
+        guard preferences.selectedDisplays.contains(id) else { return "Movement off" }
+        let p = preferences.movementSettings(for: id)
+        let next = movementSchedule.deadlines[id].map { " · next in \(max(0, Int($0.timeIntervalSince(now))))s" } ?? ""
+        return "\(p.mode.title) · every \(Int(p.intervalMinutes)) min\(next)"
+    }
+    func movementExplanations(for id: String) -> [String] {
+        let p = preferences.movementSettings(for: id)
+        guard let display = snapshot.displays.first(where: { $0.id == id }) else { return [] }
+        return snapshot.windows.filter { $0.frame.intersects(display.frame) }.compactMap { window in
+            if let reason = window.skipReason { return "\(window.appName): \(reason)." }
+            if p.excludedApps.contains(window.appID) { return "\(window.appName): excluded from movement." }
+            if p.avoidFocusedWindow && window.focused { return "\(window.appName): focused window is excluded." }
+            if let other = snapshot.windows.first(where: { $0.id != window.id && Geometry.overlaps($0.frame, window.frame) }) {
+                let overlap = window.frame.intersection(other.frame)
+                return "\(window.appName): overlaps \(other.appName) by \(min(overlap.width, overlap.height).formatted()) points. Separate the windows before moving."
+            }
+            return nil
+        }
+    }
+    private func prepareOperation(displayID: String) {
+        operationDisplayID = displayID
+        operationSettings = preferences.movementSettings(for: displayID)
+    }
+    private func syncMovementClock() {
+        guard running && !suspended else { movementSchedule.stop(); clock.stop(); return }
+        let intervals = Dictionary(uniqueKeysWithValues: snapshot.displays.filter { preferences.selectedDisplays.contains($0.id) }
+            .map { ($0.id, preferences.movementSettings(for: $0.id).intervalMinutes * 60) })
+        movementSchedule.sync(intervals, now: Date())
+        if let next = movementSchedule.next { clock.wait(until: next.date) }
+        else { clock.stop() }
+    }
+    private func completeOperationClock() {
+        if let id = operationDisplayID { movementSchedule.restart(id, now: Date()) }
+        operationDisplayID = nil; operationSettings = nil
+        syncMovementClock()
+    }
+
     private func finish(message: String) {
         busy = false
+        updateDimming()
         applyingTask = nil
         refresh()
         status = message
-        if running && !suspended { clock.start(now: Date(), interval: preferences.intervalMinutes * 60) } else { clock.stop() }
+        completeOperationClock()
     }
 
     private func cancelPending(message: String) {
@@ -431,13 +525,12 @@ final class GuardController: ObservableObject {
         preview = nil
         warnings.dismiss()
         if !busy {
-            if running && !suspended { clock.start(now: Date(), interval: preferences.intervalMinutes * 60) }
-            else { clock.stop() }
+            completeOperationClock()
         }
         status = message
     }
 
-    private func suspend() { suspended = true; cancelPending(message: "Guarding is suspended while the desktop is inactive.") }
+    private func suspend() { suspended = true; dimming.hide(); cancelPending(message: "Guarding is suspended while the desktop is inactive.") }
     private func resumeAfterSystemChange() {
         suspended = false
         anchors.removeAll()

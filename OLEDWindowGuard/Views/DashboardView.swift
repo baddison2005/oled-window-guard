@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 
 private enum Page: String, CaseIterable, Identifiable {
-    case overview = "Overview", movement = "Movement", safety = "Safety & alerts", groups = "Layout groups", about = "About"
+    case overview = "Overview", movement = "Movement", safety = "Safety & alerts", dimming = "Dimming", groups = "Layout groups", about = "About"
     var id: Self { self }
     var symbol: String {
-        switch self { case .overview: "display.2"; case .movement: "arrow.up.and.down.and.arrow.left.and.right"; case .safety: "shield.lefthalf.filled"; case .groups: "rectangle.3.group"; case .about: "info.circle" }
+        switch self { case .overview: "display.2"; case .movement: "arrow.up.and.down.and.arrow.left.and.right"; case .safety: "shield.lefthalf.filled"; case .dimming: "sun.min"; case .groups: "rectangle.3.group"; case .about: "info.circle" }
     }
 }
 
@@ -49,6 +49,7 @@ struct DashboardView: View {
                         case .overview: overview
                         case .movement: movement
                         case .safety: safety
+                        case .dimming: dimming
                         case .groups: groups
                         case .about: about
                         }
@@ -72,6 +73,7 @@ struct DashboardView: View {
         case .overview: "Automatically shift and rotate application windows to reduce how long content stays in one place."
         case .movement: "Choose how far, how often, and how many."
         case .safety: "Predictable movement starts with sensible boundaries."
+        case .dimming: "Keep attention on your active window."
         case .groups: "Give your Window Layouts groups room to move."
         case .about: "Keep your windows moving. Care for your OLED."
         }
@@ -81,8 +83,10 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 20) {
             Label("OLED Window Guard", systemImage: "display").font(.largeTitle)
             Text("Keep your windows moving. Care for your OLED.").font(.title3)
-            Text("Automatically shift and rotate application windows to reduce how long content stays in one place. Choose individual shifts, coordinated swaps or Window Layouts groups, with advance warnings and activity-aware cancellation.")
+            Text("Automatically shift and rotate application windows to reduce how long content stays in one place. Choose individual shifts, coordinated swaps or Window Layouts groups, with advance warnings and activity-aware cancellation. Optionally dim unfocused application windows and displays with no focused window, using per-monitor darkness levels, activation delays and fades. Choose apps that stay bright and temporarily restore brightness with a global shortcut. Dimming follows windows during movement, and both effects can be controlled from the menu bar.")
             Text("Version \(ReleaseUpdater.version) · Build \(ReleaseUpdater.build)").font(.headline)
+            Toggle("Show OLED Window Guard in the Dock", isOn: $model.preferences.showsDockIcon)
+            Text("Click its Dock icon to open settings. Right-click for guarding and brightness controls.").font(.caption).foregroundStyle(.secondary)
             Text("Created by Brett Addison.").foregroundStyle(.secondary)
             Text("Display care & legal notice").font(.headline)
             Text("OLED Window Guard does not guarantee prevention of OLED burn-in, image retention or other display damage. Follow your display manufacturer’s care instructions, including recommended pixel-care features, brightness settings and display sleep, to help reduce these risks.")
@@ -141,7 +145,11 @@ struct DashboardView: View {
                             }
                         }.toggleStyle(.checkbox)
                     }
-                    DisplayMap(display: display, windows: model.snapshot.windows, plan: model.preview, group: model.preferences.mode == .group ? model.selectedGroup : nil)
+                    Text(model.movementSummary(for: display.id)).font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(model.movementExplanations(for: display.id).enumerated()), id: \.offset) { _, explanation in
+                        Text(explanation).font(.caption).foregroundStyle(.secondary)
+                    }
+                    DisplayMap(display: display, windows: model.snapshot.windows, plan: model.preview, group: model.preferences.movementSettings(for: display.id).mode == .group ? model.groups.first { $0.id == model.preferences.movementSettings(for: display.id).groupID } : nil)
                         .frame(height: 160)
                 }.padding(18).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
             }
@@ -159,6 +167,13 @@ struct DashboardView: View {
                     Button("Movement settings") { page = .movement }.controlSize(.small)
                 }
             }
+            Picker("Display for preview and Move after warning", selection: $model.movementDisplayID) {
+                Text("First selected display").tag("")
+                ForEach(model.snapshot.displays.filter { model.preferences.selectedDisplays.contains($0.id) }) { display in
+                    Text(display.name).tag(display.id)
+                }
+            }.disabled(model.busy || model.warningActive)
+            Text("Preview and manual moves use this display. Automatic guarding uses each selected display’s own settings and interval.").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 Button("Preview safe moves", systemImage: "viewfinder") { model.showPreview() }
                 Button("Move after warning…", systemImage: "play") { model.moveSoon() }.disabled(!model.trusted || model.warningActive)
@@ -180,8 +195,70 @@ struct DashboardView: View {
         }
     }
 
+    private var dimming: some View {
+        Group {
+            settingsCard {
+                Text("Dimming displays").font(.headline)
+                Text("Choose displays independently of window movement. Each display can use the defaults below or its own settings.").font(.caption).foregroundStyle(.secondary)
+                ForEach(model.snapshot.displays) { display in
+                    DisplayDimmingCard(display: display, preferences: $model.preferences)
+                }
+                if model.snapshot.displays.isEmpty { Text("No displays detected. Refresh in Overview.") }
+            }
+            settingsCard {
+                Text("Restore brightness").font(.headline)
+                Button("Restore brightness now · ⌃⌥⌘B") { model.restoreBrightness() }
+                Toggle("Enable Control–Option–Command–B shortcut", isOn: $model.preferences.brightnessShortcutEnabled)
+                Text(model.brightnessShortcutStatus).font(.caption)
+                Text("Clears both dimming effects on all dimming displays and restarts their delays immediately. Brightness stays restored for at least five seconds; longer activation delays are respected. Movement continues unchanged.").font(.caption).foregroundStyle(.secondary)
+            }
+            settingsCard {
+                Text("Apps that stay bright").font(.headline)
+                Text("Excluded apps stay bright under both window and display dimming. Only their visible window areas are exempt. These exclusions are separate from movement exclusions.").font(.caption).foregroundStyle(.secondary)
+                ForEach(model.preferences.dimmingExclusions.sorted(), id: \.self) { id in
+                    HStack {
+                        Text(appName(id)); Spacer()
+                        Button("Remove") { model.preferences.dimmingExclusions.remove(id) }
+                    }
+                }
+                Button("Add app exclusion…") { addDimmingExcludedApps() }
+            }
+            Text("Default settings and master switches").font(.headline)
+            settingsCard {
+                Toggle("Dim unfocused application windows", isOn: $model.preferences.dimUnfocusedWindows)
+                numberRow("Window dimming", value: $model.preferences.windowDimmingPercent, range: 0...90, unit: "%")
+                numberRow("Window activation delay", value: $model.preferences.windowDimmingDelay, range: 0...600, unit: "seconds")
+                Text("Window fade: \(model.preferences.windowDimmingFade, specifier: "%.1f") seconds")
+                Slider(value: $model.preferences.windowDimmingFade, in: 0...3, step: 0.5).accessibilityLabel("Window fade duration")
+                Text("Darken visible portions of background windows while keeping the focused window clear. Applies to full-screen and maximised windows too; movement exclusions do not affect dimming. Clicking empty desktop space clears dimming on that display; it does not brighten other displays.").font(.caption).foregroundStyle(.secondary)
+            }
+            settingsCard {
+                Toggle("Dim displays with no focused window", isOn: $model.preferences.dimInactiveDisplays)
+                numberRow("Display dimming", value: $model.preferences.displayDimmingPercent, range: 0...90, unit: "%")
+                numberRow("Display activation delay", value: $model.preferences.displayDimmingDelay, range: 0...600, unit: "seconds")
+                Text("Display fade: \(model.preferences.displayDimmingFade, specifier: "%.1f") seconds")
+                Slider(value: $model.preferences.displayDimmingFade, in: 0...3, step: 0.5).accessibilityLabel("Display fade duration")
+                Text("Darken a selected display when the focused window is on another display, or the active desktop is on another display. A focused window spanning displays keeps both clear. Each delay runs independently from when its window loses focus or its display has no focused window. Regaining focus clears dimming immediately and resets that timer. Fade-in starts after the activation delay, using the chosen 0–3 second duration. A zero fade applies dimming immediately. Returning to a window restores brightness promptly. This amount replaces window dimming on an inactive display; the two amounts do not stack.").font(.caption).foregroundStyle(.secondary)
+            }
+            settingsCard {
+                Text(model.dimmingStatus).font(.callout)
+                Text("Uses the displays selected above, independently of movement. Dimming works while movement is paused and starts when enabled, including after relaunch. Turn both switches off to clear it. Overlays let clicks and scrolling pass through; focus updates within about half a second. Dimming stays active through warnings, moves and restores, following windows as they move. It hides during sleep and session changes. OLED Window Guard controls and system panels stay clear. Desktop focus and Space changes are handled per display; they do not reset unrelated displays.").font(.caption).foregroundStyle(.secondary)
+                Text("0% adds no darkness; 90% is the darkest setting. This is a visual overlay, not a change to hardware brightness or a calibrated luminance reduction. Rectangular window bounds can leave differences around rounded corners, shadows and transparent content. No screen images are captured. Heatmaps are not included.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var movement: some View {
         Group {
+            settingsCard {
+                Text("Independent movement by display").font(.headline)
+                Text("Each selected display has its own interval. Due displays move one at a time, each with a warning. Safety settings and app exclusions are shared. Defaults below apply to displays without custom settings.").font(.caption)
+                ForEach(model.snapshot.displays) { display in
+                    DisplayMovementCard(display: display, groups: model.groups, preferences: $model.preferences)
+                }
+                Text("Space-specific automatic profiles are unavailable: public macOS APIs do not identify individual desktop Spaces reliably. These settings apply to the currently visible Space on each display.").font(.caption).foregroundStyle(.secondary)
+            }
+            Text("Default movement settings").font(.headline)
             VStack(alignment: .leading, spacing: 14) {
                 Text("Movement style").font(.headline)
                 ForEach(MovementMode.allCases) { mode in
@@ -202,6 +279,11 @@ struct DashboardView: View {
                 numberRow("Check every", value: $model.preferences.intervalMinutes, range: 1...240, unit: "minutes")
                 Divider()
                 Stepper("Up to \(model.preferences.maximumWindows) windows per cycle", value: $model.preferences.maximumWindows, in: 1...12)
+                if model.preferences.mode == .drift {
+                    Toggle("Allow horizontal order changes during large shifts", isOn: $model.preferences.allowHorizontalShiftReordering)
+                    Toggle("Allow vertical order changes during large shifts", isOn: $model.preferences.allowVerticalShiftReordering)
+                    Text("Let windows trade left/right or top/bottom order when the maximum range is large enough. Larger Gaussian samples can trigger coordinated moves, with at least one window travelling 40% of the maximum range. Windows keep their sizes and every move stays within the maximum. Brief overlap is allowed during placement; final positions never overlap. If no arrangement fits, ordinary shifts are tried. These options control coordinated reordering; ordinary shifts into empty space can still pass other windows.").font(.caption).foregroundStyle(.secondary)
+                }
                 if model.preferences.mode == .swap {
                     Toggle("Keep adjacent similar-sized windows together", isOn: $model.preferences.keepSimilarWindowsTogether)
                     Text("Only similarly sized windows that touch or have gaps up to 8 points form a group. Larger or smaller neighbours move independently. Groups keep their spacing and arrangement, and may move into suitable empty space as well as exchange positions. If a group cannot move intact, it stays in place. The window limit counts every member.").font(.caption).foregroundStyle(.secondary)
@@ -313,7 +395,11 @@ struct DashboardView: View {
                 ForEach(model.snapshot.displays.filter { model.preferences.selectedDisplays.contains($0.id) }) { display in
                     VStack(alignment: .leading, spacing: 12) {
                         Text("\(group.name) · \(display.name)").font(.headline)
-                        DisplayMap(display: display, windows: model.snapshot.windows, plan: nil, group: group).frame(height: 200)
+                        Text(model.movementSummary(for: display.id)).font(.caption).foregroundStyle(.secondary)
+                    ForEach(Array(model.movementExplanations(for: display.id).enumerated()), id: \.offset) { _, explanation in
+                        Text(explanation).font(.caption).foregroundStyle(.secondary)
+                    }
+                    DisplayMap(display: display, windows: model.snapshot.windows, plan: nil, group: group).frame(height: 200)
                     }
                 }
                 Text("\(group.zones.count) zones. Rotation treats overlapping zones as alternative destinations and checks the complete arrangement. Drift requires a single containing zone and spare space within it. The window limit, exclusions and focused-window setting still apply.")
@@ -363,6 +449,19 @@ struct DashboardView: View {
         case .drift: "Random directions with bell-curve distances. Prefers 20–100% of your maximum range, with smaller moves when space is limited."
         case .swap: "Rearrange two or more windows together, including different sizes, without resizing."
         case .group: "Drift inside saved zones, or rotate windows between them."
+        }
+    }
+    private func addDimmingExcludedApps() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose applications to keep bright"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        if panel.runModal() == .OK {
+            for url in panel.urls {
+                if let id = Bundle(url: url)?.bundleIdentifier { model.preferences.dimmingExclusions.insert(id) }
+            }
         }
     }
     private func addExcludedApp() {

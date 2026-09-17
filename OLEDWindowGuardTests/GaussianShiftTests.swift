@@ -2,6 +2,57 @@ import XCTest
 @testable import OLEDWindowGuard
 
 final class GaussianShiftTests: XCTestCase {
+    func testCoordinatedHorizontalShiftsRespectRangeAndOptIn() {
+        let fixture = MovementTests()
+        let windows = [fixture.window("a", 0, 24, 800, 740), fixture.window("b", 800, 24, 400, 740)]
+        var p = fixture.preferences; p.driftRangePercent = 100
+        XCTAssertTrue(fixture.plan(windows, p: p).moves.isEmpty)
+        p.allowHorizontalShiftReordering = true
+        var successes = 0
+        for seed in 1...40 {
+            let plan = fixture.plan(windows, p: p, seed: UInt64(seed))
+            if plan.moves.isEmpty { continue }
+            successes += 1
+            XCTAssertEqual(plan.moves.count, 2)
+            XCTAssertTrue(MovementPlanner.safeFinal(moves: plan.moves, world: windows, area: fixture.display.usableFrame))
+            XCTAssertTrue(MovementPlanner.shiftOrderAllowed(moves: plan.moves, candidates: windows, policy: p))
+            for move in plan.moves {
+                XCTAssertEqual(move.from.size, move.to.size)
+                XCTAssertLessThanOrEqual(MovementPlanner.shiftMagnitude(from: move.from, to: move.to, display: fixture.display, percent: 100), 1 + 1e-9)
+            }
+        }
+        XCTAssertGreaterThan(successes, 0)
+        p.driftRangePercent = 30
+        for seed in 1...10 { XCTAssertTrue(fixture.plan(windows, p: p, seed: UInt64(seed)).moves.isEmpty) }
+        p.driftRangePercent = 100; p.maximumWindows = 1
+        XCTAssertTrue(fixture.plan(windows, p: p).moves.isEmpty)
+        p.maximumWindows = 4; p.excludedApps = [windows[0].appID]
+        XCTAssertTrue(fixture.plan(windows, p: p).moves.isEmpty)
+    }
+
+    func testVerticalReorderingAndDisabledAxis() {
+        let fixture = MovementTests()
+        let windows = [fixture.window("a", 0, 24, 1200, 370), fixture.window("b", 0, 394, 1200, 370)]
+        var p = fixture.preferences; p.driftRangePercent = 100; p.allowHorizontalShiftReordering = true
+        for seed in 1...10 { XCTAssertTrue(fixture.plan(windows, p: p, seed: UInt64(seed)).moves.isEmpty) }
+        p.allowHorizontalShiftReordering = false; p.allowVerticalShiftReordering = true
+        XCTAssertTrue((1...40).contains { !fixture.plan(windows, p: p, seed: UInt64($0)).moves.isEmpty })
+    }
+
+    func testShiftOrderPreferencesMigrationAndRoundTrip() throws {
+        let encoded = try JSONEncoder().encode(Preferences())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "shiftHorizontalOrder"); object.removeValue(forKey: "shiftVerticalOrder")
+        var p = try JSONDecoder().decode(Preferences.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertFalse(p.shiftReorderingEnabled)
+        p.allowHorizontalShiftReordering = true; p.allowVerticalShiftReordering = true
+        let decoded = try JSONDecoder().decode(Preferences.self, from: JSONEncoder().encode(p))
+        XCTAssertTrue(decoded.allowHorizontalShiftReordering); XCTAssertTrue(decoded.allowVerticalShiftReordering)
+        XCTAssertTrue(decoded.permitsIntermediateOverlap)
+        p.mode = .swap
+        XCTAssertFalse(p.permitsIntermediateOverlap)
+    }
+
     func testClampedGaussianDistribution() {
         var rng = MovementTests.RNG(state: 731)
         let samples = (0..<100_000).map { _ in MovementPlanner.gaussianShiftMagnitude(rng: &rng) }

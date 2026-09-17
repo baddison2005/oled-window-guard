@@ -5,6 +5,7 @@ struct MovementClock {
     enum Phase: Equatable { case stopped, waiting(Date), warning(Date), applying }
     private(set) var phase: Phase = .stopped
     mutating func start(now: Date, interval: TimeInterval) { phase = .waiting(now.addingTimeInterval(interval)) }
+    mutating func wait(until deadline: Date) { phase = .waiting(deadline) }
     mutating func stop() { phase = .stopped }
     mutating func warn(now: Date, seconds: TimeInterval) { phase = .warning(now.addingTimeInterval(seconds)) }
     mutating func applying() { phase = .applying }

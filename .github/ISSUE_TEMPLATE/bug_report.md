@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a public beta problem
+about: Report a problem with OLED Window Guard
 labels: bug
 ---
 

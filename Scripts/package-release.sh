@@ -29,7 +29,9 @@ FINAL_APP_DIRECTORY="$OUTPUT_DIRECTORY/$VERSION"
 [[ $(/usr/libexec/PlistBuddy -c 'Print OLEDUpdateRepository' "$APP_PATH/Contents/Info.plist") == 'baddison2005/oled-window-guard' ]] || { print -u2 'Missing update repository in built app.'; exit 1; }
 [[ $(/usr/libexec/PlistBuddy -c 'Print OLEDUpdateChannel' "$APP_PATH/Contents/Info.plist") == 'stable' ]] || { print -u2 'Missing stable update channel in built app.'; exit 1; }
 
-lipo "$APP_PATH/Contents/MacOS/OLED Window Guard" -verify_arch arm64 x86_64
+for architecture in arm64 x86_64; do
+  xcrun lipo "$APP_PATH/Contents/MacOS/OLED Window Guard" -verify_arch "$architecture"
+done
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 codesign -dvvv "$APP_PATH" 2> "$OUTPUT_DIRECTORY/signature.txt"
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$WORK_DIRECTORY/submission.zip"
