@@ -39,6 +39,12 @@ the GIFs do not imply smooth animated paths or guaranteed burn-in prevention.
 
 ![Restore the previous window arrangement](docs/media/restore-last-move.gif)
 
+**Window and display dimming** — keep the active window bright, then dim the display when attention moves elsewhere.
+
+In this LG monitor recording, Finder dims while Word remains active. Switching to Finder restores its brightness and lets the Word document dim. Finally, focus moves to the MacBook display and the whole LG display dims. Window dimming is set to 40% after 5 seconds; display dimming is set to 50% after 10 seconds, both with 2-second fades. Some idle time is trimmed; the fades play at their recorded speed. The desktop wallpaper changes automatically during the recording.
+
+![Finder dims, then Word dims, then the LG display dims after focus moves to the MacBook](docs/media/window-and-display-dimming.gif)
+
 ## Explore the app
 
 Choose a movement style, preview its destinations, and control when moves are allowed.
@@ -97,6 +103,10 @@ Movement settings can be customised for each monitor: movement type, interval, w
 In Overview, choose the display for **Preview safe moves** and **Move after warning**. Automatic guarding still covers every selected display. Per-display settings apply to the currently visible Space; persistent automatic per-Space profiles are not implemented because public APIs do not provide reliable Space identifiers. Dock desktop/transition surfaces are excluded from movement snapshots, while the real Dock remains protected by the usable-screen boundary.
 
 ## Dimming
+
+Choose which displays to dim, then set window and display dimming independently. Each can have its own darkness level, activation delay and fade duration.
+
+![Window and display dimming settings, including per-display levels, delays, fades and brightness restoration](docs/media/OWG_window_and_screen_dimming.png)
 
 Select dimming displays independently from movement. Each connected display is named in the Dimming page and can use default settings or custom window/display levels, delays and fades. The two main dimming switches remain master controls. Existing selections migrate once; disconnected display settings are retained for reconnection.
 
