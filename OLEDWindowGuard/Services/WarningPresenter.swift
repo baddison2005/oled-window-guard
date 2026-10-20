@@ -4,6 +4,7 @@ import UserNotifications
 
 @MainActor
 final class WarningPresenter {
+    static private(set) var windowNumbers: Set<CGWindowID> = []
     private var panels: [NSPanel] = []
     private let notificationID = "upcoming-move"
     private var cancellationDismissal: Task<Void, Never>?
@@ -30,6 +31,7 @@ final class WarningPresenter {
             panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.maxX - 444, y: screen.visibleFrame.maxY - 244))
             panel.orderFrontRegardless()
             panels.append(panel)
+            Self.windowNumbers.insert(CGWindowID(panel.windowNumber))
         }
         if sound { NSSound(named: "Glass")?.play() }
         if notify {
@@ -61,6 +63,7 @@ final class WarningPresenter {
             panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.maxX - 444, y: screen.visibleFrame.maxY - 164))
             panel.orderFrontRegardless()
             panels.append(panel)
+            Self.windowNumbers.insert(CGWindowID(panel.windowNumber))
         }
         if notify {
             let content = UNMutableNotificationContent()
@@ -83,6 +86,7 @@ final class WarningPresenter {
         // in WindowServer metadata while its disappearance animation settles.
         panels.forEach { $0.close() }
         panels.removeAll()
+        Self.windowNumbers.subtract(windowNumbers)
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [notificationID])
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [notificationID])
         return windowNumbers

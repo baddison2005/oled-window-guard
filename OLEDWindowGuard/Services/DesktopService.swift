@@ -47,7 +47,7 @@ final class DesktopService {
             guard DesktopWindowFilter.includes(ownerPID: pid, ownPID: getpid(), title: title) else { return nil }
             // Exclude only the warning panels this process just closed. Keep
             // every other application window, including our dashboard, as an obstacle.
-            guard pid != getpid() || !(excludingOwnWindowNumbers.union(DimmingPresenter.windowNumbers)).contains(id) else { return nil }
+            guard pid != getpid() || !(excludingOwnWindowNumbers.union(DimmingPresenter.windowNumbers).union(WarningPresenter.windowNumbers)).contains(id) else { return nil }
             // Floating windows and dialogs are obstacles too. System overlays are handled by usableFrame / session events.
             guard layer >= 0, layer < Int(CGWindowLevelForKey(.mainMenuWindow)) else { return nil }
             return Visible(id: "\(pid):\(id)", pid: pid, frame: frame, layer: layer)

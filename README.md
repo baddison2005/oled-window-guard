@@ -6,7 +6,9 @@ Automatically shift and rotate application windows to reduce how long content st
 
 A native macOS menu-bar app that periodically moves eligible windows on selected displays. Built with SwiftUI, AppKit, public Accessibility APIs and Core Graphics. No dependencies, screen capture, telemetry, window-title logging, private window-server APIs.
 
-**Stable release: 1.0.0.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+**Stable release: 1.1.0.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+
+Version 1.1.0 adds a live monitor layout, retained movement previews, desktop-click dimming choices, independent movement/dimming guard controls, and quick Dock/panel actions.
 
 ## Download
 
@@ -14,7 +16,7 @@ A native macOS menu-bar app that periodically moves eligible windows on selected
 
 This release is free to use. Future releases or additional features may be paid.
 Source is publicly viewable with copyright reserved; see [LICENSE](LICENSE).
-Version 1.0.0 includes window movement plus optional per-display window and display dimming. Exposure heatmaps are not included.
+Includes window movement plus optional per-display window and display dimming. Exposure heatmaps are not included.
 
 ![OLED Window Guard Overview](docs/media/OWG_overview.png)
 
@@ -100,6 +102,10 @@ Version information and manual update checks:
 
 Movement settings can be customised for each monitor: movement type, interval, window limit, shift range, order changes, grouping, size tolerance and Window Layouts group. Displays without overrides use the defaults. Each selected display has its own timer; due moves run one display at a time with their own warning. Completing or skipping a move restarts only that display’s interval. Safety settings, movement app exclusions and the Window Layouts library source remain shared.
 
+In 1.1.0, Overview updates window placement while it is open, including the physical arrangement of monitors. Blue rectangles identify focused windows; mint outlines and arrows identify planned destinations. Only window metadata and geometry are read; the preview does not capture window contents.
+
+**Preview safe moves** selects the next move for its display. **Move after warning…** and the next automatic move on that display reuse the proposal while its layout, settings, selected group and source remain valid. A changed layout clears the preview. During a warning, window changes cancel the pending move. The app checks again after the activity quiet period, before every placement, and after settling. Press Preview again to select a different proposal.
+
 In Overview, choose the display for **Preview safe moves** and **Move after warning**. Automatic guarding still covers every selected display. Per-display settings apply to the currently visible Space; persistent automatic per-Space profiles are not implemented because public APIs do not provide reliable Space identifiers. Dock desktop/transition surfaces are excluded from movement snapshots, while the real Dock remains protected by the usable-screen boundary.
 
 ## Dimming
@@ -111,6 +117,15 @@ Choose which displays to dim, then set window and display dimming independently.
 Select dimming displays independently from movement. Each connected display is named in the Dimming page and can use default settings or custom window/display levels, delays and fades. The two main dimming switches remain master controls. Existing selections migrate once; disconnected display settings are retained for reconnection.
 
 Add app-specific dimming exclusions to keep those apps’ visible windows bright under either effect, independently of movement exclusions. **Control–Option–Command–B** (or **Restore brightness** in the app/menu) clears dimming on all dimming displays and restarts their delays immediately, with a five-second minimum bright period. Longer activation delays remain in effect. The shortcut can be disabled; a registration conflict is reported in the Dimming page.
+
+In 1.1.0, **Start movement / Pause movement** and **Start dimming / Pause dimming** are independent controls at the top of the app, in the menu-bar panel and in the Dock menu. Separate status lights show each guard as Active, Waiting or Paused. Both guards start paused after launch; saved selections, effect switches and dimming settings are preserved. Pausing dimming restores brightness; pausing movement leaves dimming under its own control.
+
+The Dock menu also offers **Move now…** (starts the advance warning on the movement display selected in Overview) and **Restore last move…**, with the same validation and safety checks as the dashboard. The Dock and menu-bar panel offer **Dim monitor now** while dimming guarding is running. Choose its target independently with **Display for Dim monitor now** in the panel; the action names the selected monitor. It immediately applies that monitor's display-dimming level to the screen and its windows, including the focused window, skipping activation delays and fades. App exclusions and OWG controls stay bright. Interaction on that monitor, Pause dimming or Restore brightness clears the manual dim; activity on other monitors does not. Disconnected or deselected dimming displays are removed from the manual dim state.
+
+The Dimming page also offers two behaviors for an empty-desktop click:
+
+- **Restore brightness and restart dimming timers:** clear both effects on the clicked monitor, then let windows and the display dim again after their independent delays, even while that desktop remains active.
+- **Restore brightness without restarting dimming timers:** keep the clicked monitor bright until an application window on that monitor is clicked. This is the default. Activity on other monitors does not release the hold or reset their timers.
 
 
 The Dimming page offers independent switches and 0–90% darkness controls for unfocused application windows and displays with no focused window. Both default off. Each effect has an independent 0–600 second activation delay (default zero). Window timers start when individual windows lose focus; display timers start when a selected display has no focused window. Regaining focus clears the effect and resets its timer. Clicking empty desktop space clears dimming on that display without resetting other displays. Space changes no longer clear dimming globally. Separate fade-in sliders offer 0–3 seconds in half-second steps after each activation delay; focus restores brightness promptly. The menu-bar panel offers a movement picker showing the selected mode and On/Off toggles for each dimming effect. Dimming monitors are selected on the Dimming page, independently of movement. These features run independently of the movement timer, including while movement is paused, and enabled settings persist across launches.
@@ -144,7 +159,7 @@ Requires macOS 14.6 or later. Release builds support Apple silicon and Intel.
 1. Download the DMG from [GitHub Releases](https://github.com/baddison2005/oled-window-guard/releases), open it and drag **OLED Window Guard.app** onto **Applications**. A ZIP download is also available.
 2. Open the app. Grant **Accessibility** access using its button and System Settings → Privacy & Security → Accessibility. Relaunch if macOS requires it.
 3. Select the monitors to guard, choose the movement style and settings, and preview available moves.
-4. Select **Start guarding**. The app also remains accessible from the menu bar when its window is closed.
+4. Choose **Start movement**, **Start dimming**, or both. The app also remains accessible from the menu bar when its window is closed.
 
 Quit any development or older copy before opening the installed app. A second copy exits to prevent competing movement controllers.
 

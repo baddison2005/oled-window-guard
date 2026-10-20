@@ -52,4 +52,16 @@ For 0.1.7, enable **Keep adjacent similar-sized windows together** in Swap posit
 - Only the current on-screen windows are considered. No movement between monitors or Spaces. Ambiguous Accessibility/WindowServer matches are skipped.
 - Built-in layout groups and custom groups are supported; persistent per-app assignments and Window menu actions are not. No automatic layout resizing is performed.
 - No presentation/screen-sharing detection in this preview. Pause guarding before a presentation, game, screen share or recording. Full-screen and maximised windows themselves are always skipped.
-- The check interval is global for all selected monitors. Settings save immediately. Automatic guarding is not restored on launch.
+- Movement intervals can be customised per monitor. Settings save immediately. Automatic guarding is not restored on launch.
+
+# Version 1.1.0 verification
+
+1. Launch the local 1.1.0 build. Confirm separate Movement and Dimming lights and Start buttons; both begin paused. Start/pause each guard independently in the app, menu panel and Dock menu.
+2. With Overview open, move or resize a window manually and confirm its live rectangle follows. Check monitors at negative coordinates and different scales.
+3. Preview a move, note its destination outlines/arrows, then choose Move after warning. With unchanged layout and quiet input, verify the move uses those destinations. Repeat with an automatic move on the previewed display.
+4. Preview, then move/resize/close a window or add an obstacle: confirm the stale preview clears. During a warning, change the arrangement: confirm cancellation rather than movement to stale destinations. Repeat recent typing/scrolling checks at countdown expiry.
+5. In Dimming choose “restart dimming timers,” use distinct nonzero window/display delays, and click empty desktop on the dimmed monitor. Confirm prompt brightness restoration, then window and whole-display dimming after their respective delays even without clicking a window. Confirm another monitor retains its delay and fade.
+6. Choose “without restarting dimming timers,” click empty desktop, and wait beyond both delays. Confirm it remains bright, including after clicking another monitor. Click an application window on the held monitor and confirm ordinary focus-based dimming resumes.
+7. Pause dimming while movement stays active, then reverse. Confirm settings persist, brightness restores on pause, and the panel/Dock labels follow the corresponding guard. Retest Control–Option–Command–B and Space changes on another monitor.
+8. With dimming running, select a target in the panel and choose Dim monitor now. Verify its focused window and desktop dim immediately at the monitor level; another monitor remains unchanged. Interact on the other monitor, then on the dimmed monitor, to verify local cancellation. Check exclusions, Restore brightness, pause and target disconnection.
+9. Right-click the Dock icon: verify Move now starts the normal warning, Restore last move follows its safety checks, and unavailable actions are disabled. Dim monitor now should name the panel's selected dimming monitor and be disabled while dimming is paused.

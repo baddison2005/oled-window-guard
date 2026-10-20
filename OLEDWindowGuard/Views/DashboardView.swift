@@ -24,8 +24,7 @@ struct DashboardView: View {
                 List(Page.allCases, selection: $page) { item in Label(item.rawValue, systemImage: item.symbol).tag(item).padding(.vertical, 5) }
                     .listStyle(.sidebar)
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(model.running ? "Guarding" : "Paused", systemImage: model.running ? "circle.fill" : "pause.circle")
-                        .font(.caption.weight(.medium)).foregroundStyle(model.running ? Color.mint : Color.secondary)
+                    GuardStatusLights(model: model)
                     Text("Version \(ReleaseUpdater.version) · \(updater.includesPrereleases ? "Beta" : "Stable")").font(.caption2).foregroundStyle(.tertiary)
                 }.padding(24)
             }
@@ -38,8 +37,10 @@ struct DashboardView: View {
                         Text(subtitle).font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button(model.running ? "Pause guarding" : "Start guarding") { model.toggleRunning() }
+                    Button(model.running ? "Pause movement" : "Start movement") { model.toggleRunning() }
                         .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(.black).disabled(model.busy || updater.busy)
+                    Button(model.dimmingRunning ? "Pause dimming" : "Start dimming") { model.toggleDimming() }
+                        .buttonStyle(.borderedProminent).tint(.mint).foregroundStyle(.black).disabled(updater.busy)
                 }.padding(28)
                 Divider()
                 ScrollView {
@@ -66,6 +67,9 @@ struct DashboardView: View {
         }
         .tint(.mint)
         .onChange(of: updater.busy) { _, busy in if !busy { model.updateInProgress = false } }
+        .onAppear { model.overviewVisible = page == .overview }
+        .onDisappear { model.overviewVisible = false }
+        .onChange(of: page) { _, value in model.overviewVisible = value == .overview }
     }
 
     private var subtitle: String {
@@ -83,7 +87,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 20) {
             Label("OLED Window Guard", systemImage: "display").font(.largeTitle)
             Text("Keep your windows moving. Care for your OLED.").font(.title3)
-            Text("Automatically shift and rotate application windows to reduce how long content stays in one place. Choose individual shifts, coordinated swaps or Window Layouts groups, with advance warnings and activity-aware cancellation. Optionally dim unfocused application windows and displays with no focused window, using per-monitor darkness levels, activation delays and fades. Choose apps that stay bright and temporarily restore brightness with a global shortcut. Dimming follows windows during movement, and both effects can be controlled from the menu bar.")
+            Text("Automatically shift and rotate application windows to reduce how long content stays in one place. Choose individual shifts, coordinated swaps or Window Layouts groups, with advance warnings and activity-aware cancellation. Preview the live monitor layout and retain the next safe destinations. Optionally dim unfocused application windows and displays with no focused window, using per-monitor darkness levels, activation delays and fades. Choose apps that stay bright, choose how empty-desktop clicks restore brightness, and temporarily restore brightness with a global shortcut. Movement and dimming have independent Start/Pause controls in the app, menu bar and Dock.")
             Text("Version \(ReleaseUpdater.version) · Build \(ReleaseUpdater.build)").font(.headline)
             Toggle("Show OLED Window Guard in the Dock", isOn: $model.preferences.showsDockIcon)
             Text("Click its Dock icon to open settings. Right-click for guarding and brightness controls.").font(.caption).foregroundStyle(.secondary)
@@ -102,11 +106,11 @@ struct DashboardView: View {
                 Button("Check for updates") { updater.check() }.disabled(!updater.configured || updater.busy)
                 if updater.available != nil {
                     Button("Install update and restart") { model.updateInProgress = true; updater.install() }
-                        .disabled(updater.busy || model.running || model.busy || model.warningActive)
+                        .disabled(updater.busy || model.running || model.dimmingRunning || model.busy || model.warningActive)
                 }
                 if updater.busy { ProgressView().controlSize(.small) }
             }
-            if updater.available != nil && model.running { Text("Pause guarding before installing an update.").font(.caption) }
+            if updater.available != nil && (model.running || model.dimmingRunning) { Text("Pause movement and dimming before installing an update.").font(.caption) }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -134,6 +138,9 @@ struct DashboardView: View {
                 metric("Windows moved", value: "\(model.movedCount)", note: "this session", symbol: "arrow.triangle.swap")
             }
             sectionTitle("Your displays", trailing: "Select the screens to guard")
+            MonitorLayoutMap(snapshot: model.snapshot, plan: model.preview).frame(height: 260)
+            Text("Live layout · updates while Overview is open. Solid rectangles show current windows; mint outlines and arrows show the next planned destinations.")
+                .font(.caption).foregroundStyle(.secondary)
             ForEach(model.snapshot.displays) { display in
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
@@ -187,7 +194,7 @@ struct DashboardView: View {
                 Text("**Move after warning…** displays the move warning immediately, then moves the windows when the countdown ends. Activity on an affected display or a failed safety check can cancel the move.")
                 Text("**Restore last move…** returns windows to their positions before the last successful move, including any sizes adjusted by group rotation. It also gives a warning first and cancels if the windows have changed or cannot be restored safely.")
             }.font(.caption).foregroundStyle(.secondary)
-            Text("Preview outlines show possible destinations. A fresh plan is checked before movement. Grey windows remain obstacles; mint outlines are planned positions.")
+            Text("Preview safe moves chooses the next destinations. Move after warning and the next automatic move on that display reuse them while the layout and settings remain unchanged. Re-checks run during the warning, after the activity quiet period and before each placement. A changed preview is cleared; a changed pending move is cancelled.")
                 .font(.caption).foregroundStyle(.secondary)
             if let preview = model.preview { Text(preview.reason).font(.callout).foregroundStyle(.mint) }
             Text("Movement can vary static edge placement, but cannot guarantee prevention of OLED burn-in. Keep your display’s pixel care features and sleep settings enabled.")
@@ -197,6 +204,13 @@ struct DashboardView: View {
 
     private var dimming: some View {
         Group {
+            settingsCard {
+                Text("Empty-desktop clicks").font(.headline)
+                Picker("After clicking empty desktop", selection: $model.preferences.desktopClickBehavior) {
+                    ForEach(DesktopClickBehavior.allCases) { behavior in Text(behavior.title).tag(behavior) }
+                }
+                Text("Restart timers: clear both effects on the clicked monitor, then dim its windows and display after their independent delays, even while its desktop remains active. Without restarting: keep that monitor bright until you click an application window on it. Clicks on other monitors do not reset it.").font(.caption).foregroundStyle(.secondary)
+            }
             settingsCard {
                 Text("Dimming displays").font(.headline)
                 Text("Choose displays independently of window movement. Each display can use the defaults below or its own settings.").font(.caption).foregroundStyle(.secondary)
@@ -242,7 +256,7 @@ struct DashboardView: View {
             }
             settingsCard {
                 Text(model.dimmingStatus).font(.callout)
-                Text("Uses the displays selected above, independently of movement. Dimming works while movement is paused and starts when enabled, including after relaunch. Turn both switches off to clear it. Overlays let clicks and scrolling pass through; focus updates within about half a second. Dimming stays active through warnings, moves and restores, following windows as they move. It hides during sleep and session changes. OLED Window Guard controls and system panels stay clear. Desktop focus and Space changes are handled per display; they do not reset unrelated displays.").font(.caption).foregroundStyle(.secondary)
+                Text("Uses the displays selected above, independently of movement. Start dimming to apply enabled effects; Pause dimming restores brightness while preserving settings. Both guards start paused after launch. Overlays let clicks and scrolling pass through; focus updates within about half a second. Dimming stays active through warnings, moves and restores, following windows as they move. It hides during sleep and session changes. OLED Window Guard controls and system panels stay clear. Desktop clicks follow your selected behavior on that monitor; they do not reset unrelated displays.").font(.caption).foregroundStyle(.secondary)
                 Text("0% adds no darkness; 90% is the darkest setting. This is a visual overlay, not a change to hardware brightness or a calibrated luminance reduction. Rectangular window bounds can leave differences around rounded corners, shadows and transparent content. No screen images are captured. Heatmaps are not included.").font(.caption).foregroundStyle(.secondary)
             }
         }

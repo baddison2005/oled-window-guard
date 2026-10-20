@@ -56,15 +56,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         for (title, action) in [("Open OLED Window Guard…", #selector(showWindow)),
-                                (controller.running ? "Pause guarding" : "Start guarding", #selector(toggleGuarding)),
+                                (controller.running ? "Pause movement" : "Start movement", #selector(toggleGuarding)),
+                                (controller.dimmingRunning ? "Pause dimming" : "Start dimming", #selector(toggleDimming)),
                                 ("Restore brightness", #selector(restoreBrightness))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            if action == #selector(toggleGuarding) { item.isEnabled = !controller.busy && !controller.updateInProgress }
+            if action == #selector(toggleDimming) { item.isEnabled = !controller.updateInProgress }
             item.target = self; menu.addItem(item)
         }
+        menu.addItem(.separator())
+        for (title, action, enabled) in [
+            ("Move now…", #selector(moveNow), !controller.busy && !controller.warningActive && !controller.updateInProgress && controller.trusted),
+            ("Restore last move…", #selector(restoreMove), controller.canUndo && !controller.busy && !controller.warningActive && !controller.updateInProgress),
+            ("Dim monitor now — \(controller.manualDimmingDisplayName)", #selector(dimMonitorNow), controller.canDimMonitorNow)
+        ] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self; item.isEnabled = enabled
+            if action == #selector(moveNow) { item.toolTip = "Starts the advance warning, then applies the next safe move on the display selected in Overview." }
+            if action == #selector(dimMonitorNow) { item.toolTip = "Immediately dims this display and its application windows using its display dimming level. Start dimming first." }
+            menu.addItem(item)
+        }
+        menu.autoenablesItems = false
         return menu
     }
     @objc private func toggleGuarding() { controller.toggleRunning() }
+    @objc private func toggleDimming() { controller.toggleDimming() }
     @objc private func restoreBrightness() { controller.restoreBrightness() }
+    @objc private func moveNow() { controller.moveSoon() }
+    @objc private func restoreMove() { controller.restoreLastMove() }
+    @objc private func dimMonitorNow() { controller.dimMonitorNow() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -83,10 +103,12 @@ private struct GuardMenu: View {
             }
             Text(controller.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Divider()
-            Button(controller.running ? "Pause guarding" : "Start guarding") { controller.toggleRunning() }.disabled(controller.busy)
+            GuardStatusLights(model: controller)
+            Button(controller.running ? "Pause movement" : "Start movement") { controller.toggleRunning() }.disabled(controller.busy || controller.updateInProgress)
+            Button(controller.dimmingRunning ? "Pause dimming" : "Start dimming") { controller.toggleDimming() }.disabled(controller.updateInProgress)
             if controller.warningActive { Button("Skip this move") { controller.skip() } }
             Button("Move after warning…") { controller.moveSoon() }.disabled(controller.busy || controller.warningActive)
-            Button("Restore last move…") { controller.restoreLastMove() }.disabled(!controller.canUndo || controller.busy)
+            Button("Restore last move…") { controller.restoreLastMove() }.disabled(!controller.canUndo || controller.busy || controller.warningActive || controller.updateInProgress)
             Divider()
             Text("Default movement: \(controller.preferences.mode.title)").font(.caption.weight(.semibold))
             Picker("Movement type", selection: $controller.preferences.mode) {
@@ -111,8 +133,17 @@ private struct GuardMenu: View {
             Toggle("Window dimming: \(controller.preferences.dimUnfocusedWindows ? "On" : "Off")", isOn: $controller.preferences.dimUnfocusedWindows)
             Toggle("Display dimming: \(controller.preferences.dimInactiveDisplays ? "On" : "Off")", isOn: $controller.preferences.dimInactiveDisplays)
             Text(controller.dimmingStatus).font(.caption).foregroundStyle(.secondary)
+            Picker("Display for Dim monitor now", selection: $controller.dimmingDisplayID) {
+                Text("First selected dimming display").tag("")
+                ForEach(controller.snapshot.displays.filter { controller.preferences.dimmingDisplays.contains($0.id) }) { display in
+                    Text(display.name).tag(display.id)
+                }
+            }
+            Button("Dim monitor now — \(controller.manualDimmingDisplayName)") { controller.dimMonitorNow() }
+                .disabled(!controller.canDimMonitorNow)
+            Text("Start dimming first. Dims the selected monitor and its windows immediately at its display dimming level, skipping delays and fades. Interact on that monitor or Restore brightness to clear it. App exclusions and OWG controls stay bright.").font(.caption).foregroundStyle(.secondary)
             Button("Restore brightness · ⌃⌥⌘B") { controller.restoreBrightness() }
-            Text("Enabled effects follow their activation delays, even while movement is paused.").font(.caption).foregroundStyle(.secondary)
+            Text("Dimming follows its own Start/Pause control and activation delays, independently of movement.").font(.caption).foregroundStyle(.secondary)
             Divider()
             Button("Open OLED Window Guard…", action: showWindow)
             Button("Quit") { NSApp.terminate(nil) }.keyboardShortcut("q").disabled(controller.busy || controller.updateInProgress)

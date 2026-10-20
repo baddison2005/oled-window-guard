@@ -25,6 +25,10 @@ final class GuardController: ObservableObject {
     @Published private(set) var integrationStatus = "Checking Window Layouts…"
     @Published private(set) var status = "Choose your displays, then start guarding."
     @Published private(set) var running = false
+    @Published private(set) var dimmingRunning = false
+    @Published private(set) var dimmingActive = false
+    @Published var overviewVisible = false
+    var movementActive: Bool { running && trusted && !suspended && !updateInProgress }
     @Published private(set) var trusted = false
     @Published private(set) var busy = false
     @Published var updateInProgress = false
@@ -34,7 +38,7 @@ final class GuardController: ObservableObject {
     @Published private(set) var movedCount = 0
     @Published private(set) var canUndo = false
     @Published private(set) var loginEnabled = SMAppService.mainApp.status == .enabled
-    @Published var preview: MovementPlan?
+    @Published private(set) var preview: MovementPlan?
     @Published private(set) var dimmingStatus = "Dimming is off."
     @Published private(set) var brightnessShortcutStatus = ""
     private let brightnessHotKey = BrightnessHotKey()
@@ -46,7 +50,19 @@ final class GuardController: ObservableObject {
     private var movingDimmingTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     private var pending: (plan: MovementPlan, baseline: DesktopSnapshot, handles: [String: DesktopService.Handle], isRestore: Bool)?
-    @Published var movementDisplayID = ""
+    private var prepared: [String: PreparedMovement] = [:]
+    @Published var movementDisplayID = "" {
+        didSet { if !warningActive && !busy { preview = prepared[manualMovementDisplayID]?.plan } }
+    }
+    @Published var dimmingDisplayID = ""
+    var manualDimmingDisplayID: String? {
+        InstantDimming.target(requested: dimmingDisplayID, selected: preferences.dimmingDisplays,
+            connected: Set(snapshot.displays.map(\.id)))
+    }
+    var manualDimmingDisplayName: String {
+        snapshot.displays.first { $0.id == manualDimmingDisplayID }?.name ?? "No dimming display selected"
+    }
+    var canDimMonitorNow: Bool { dimmingRunning && trusted && !suspended && !updateInProgress && manualDimmingDisplayID != nil }
     private var movementSchedule = DisplayMovementSchedule()
     private var operationSettings: Preferences?
     private var operationDisplayID: String?
@@ -119,7 +135,7 @@ final class GuardController: ObservableObject {
         if suspended { return "Sleeping" }
         if busy { return "Moving windows" }
         if case .warning = clock.phase { return "Move approaching" }
-        return running ? "Guarding your workspace" : "Ready when you are"
+        return running ? "Movement guarding" : "Movement paused"
     }
     var countdown: String {
         guard let deadline = clock.deadline else { return "—" }
@@ -139,6 +155,7 @@ final class GuardController: ObservableObject {
             if let previous = anchors[window.id], Geometry.close(previous.lastFrame, window.frame) { continue }
             anchors[window.id] = WindowAnchor(originFrame: window.frame, lastFrame: window.frame)
         }
+        if !warningActive { validatePreviews() }
     }
 
     func grantAccessibility() { desktop.requestPermission(); trusted = desktop.trusted }
@@ -170,7 +187,7 @@ final class GuardController: ObservableObject {
     }
 
     func toggleRunning() {
-        if running { running = false; cancelPending(message: "Paused. Windows stay where they are."); return }
+        if running { running = false; cancelPending(message: "Movement paused. Dimming follows its own control."); return }
         refresh()
         guard ready(requireGroup: false) else { return }
         running = true
@@ -179,12 +196,26 @@ final class GuardController: ObservableObject {
         status = "Guarding selected displays. You’ll receive a warning before each move."
     }
 
+    func toggleDimming() {
+        guard !updateInProgress else { return }
+        dimmingRunning.toggle()
+        dimming.hide()
+        updateDimming()
+        status = dimmingRunning ? "Dimming guarding started. Enabled effects follow their activation delays." : "Dimming guarding paused. Brightness restored."
+    }
+
     func showPreview() {
         guard !busy, !warningActive else { return }
         refresh()
         refreshGroups()
         var rng = SystemRandomNumberGenerator()
-        preview = MovementPlanner().plan(snapshot: snapshot, preferences: movementPreferences, anchors: anchors, group: selectedGroup, rng: &rng)
+        let settings = preferences.movementSettings(for: manualMovementDisplayID)
+        let group = groups.first { $0.id == settings.groupID }
+        let plan = MovementPlanner().plan(snapshot: snapshot, preferences: settings, anchors: anchors, group: group, rng: &rng)
+        preview = plan
+        prepared[manualMovementDisplayID] = PreparedMovement(plan: plan,
+            baseline: snapshot.restricted(to: [manualMovementDisplayID]), preferences: settings,
+            group: group, layoutSource: activeLayoutSource)
         status = preview?.reason ?? ""
     }
 
@@ -255,19 +286,51 @@ final class GuardController: ObservableObject {
         status = "Brightness restored on dimming displays. Activation delays restarted."
     }
 
+    func dimMonitorNow() {
+        guard canDimMonitorNow, let id = manualDimmingDisplayID else { return }
+        dimming.dimNow(on: id)
+        updateDimming()
+        status = "Dimmed \(manualDimmingDisplayName), including its windows. Interact on that display or use Restore brightness to clear it."
+    }
+
     private func updateDimming() {
-        dimmingStatus = dimming.update(preferences: preferences.validated(), active: !suspended && !updateInProgress)
+        dimmingActive = dimmingRunning && trusted && !suspended && !updateInProgress
+            && snapshot.displays.contains { display in
+                let settings = preferences.dimmingSettings(for: display.id)
+                return preferences.dimmingDisplays.contains(display.id) && (settings.windows || settings.display || dimming.hasInstantDimming)
+            }
+        dimmingStatus = dimmingRunning
+            ? dimming.update(preferences: preferences.validated(), active: !suspended && !updateInProgress)
+            : "Dimming guarding is paused."
     }
 
     private func tick() {
         now = Date()
         if !busy { updateDimming() }
         trusted = desktop.trusted
+        if !trusted { dimming.hide(); dimmingActive = false }
         if !trusted && (running || warningActive) {
             running = false
             cancelPending(message: "Accessibility access was removed. Guarding has paused.")
         }
         if !busy && !warningActive { syncMovementClock() }
+        if !busy && !suspended && (overviewVisible || warningActive) {
+            refresh()
+            if let pending {
+                if movementPreferences.mode == .group {
+                    refreshGroups()
+                    if pendingGroup != selectedGroup || pendingLayoutSource != activeLayoutSource {
+                        cancelPending(message: "Move cancelled during warning. The layout source, group or padding changed.")
+                        return
+                    }
+                }
+                let ids = Set(pending.plan.moves.map(\.windowID))
+                let current = snapshot.restricted(to: Set(pending.baseline.displays.map(\.id)))
+                if let change = SnapshotValidation.changeDescription(pending.baseline, current, moving: ids, avoidFocused: movementPreferences.avoidFocusedWindow) {
+                    cancelPending(message: "Move cancelled during warning. \(change)")
+                }
+            }
+        }
         guard !busy, !suspended, clock.isDue(now: now) else { return }
         if case .warning = clock.phase { executePending() }
         else if running, let next = movementSchedule.next {
@@ -300,7 +363,14 @@ final class GuardController: ObservableObject {
         refresh(); refreshGroups()
         guard ready() else { cancelPending(message: status); return }
         var rng = SystemRandomNumberGenerator()
-        let plan = MovementPlanner().plan(snapshot: snapshot, preferences: movementPreferences, anchors: anchors, group: selectedGroup, rng: &rng)
+        let cached = prepared[operationDisplayID ?? manualMovementDisplayID]
+        let plan: MovementPlan
+        if let cached, cached.matches(snapshot: snapshot, preferences: movementPreferences, group: selectedGroup, source: activeLayoutSource) {
+            plan = cached.plan
+        } else {
+            plan = MovementPlanner().plan(snapshot: snapshot, preferences: movementPreferences, anchors: anchors, group: selectedGroup, rng: &rng)
+        }
+        prepared[operationDisplayID ?? manualMovementDisplayID] = nil
         preview = plan
         guard !plan.moves.isEmpty else { cancelPending(message: plan.reason); return }
         queueWarning(plan: plan, baseline: snapshot, handles: desktop.handles)
@@ -512,6 +582,7 @@ final class GuardController: ObservableObject {
 
     private func finish(message: String) {
         busy = false
+        preview = nil
         updateDimming()
         applyingTask = nil
         refresh()
@@ -523,6 +594,7 @@ final class GuardController: ObservableObject {
         generation += 1
         pending = nil
         preview = nil
+        prepared.removeAll()
         warnings.dismiss()
         if !busy {
             completeOperationClock()
@@ -544,5 +616,16 @@ final class GuardController: ObservableObject {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(preferences.validated()).write(to: settingsURL, options: .atomic)
         } catch { status = "Settings could not be saved: \(error.localizedDescription)" }
+    }
+
+    private func validatePreviews() {
+        let before = prepared.count
+        prepared = prepared.filter { id, cached in
+            let settings = preferences.movementSettings(for: id)
+            return preferences.selectedDisplays.contains(id) && cached.matches(snapshot: snapshot, preferences: settings,
+                group: groups.first { $0.id == settings.groupID }, source: activeLayoutSource)
+        }
+        preview = prepared[manualMovementDisplayID]?.plan
+        if before > prepared.count { status = "Preview cleared because the layout or settings changed. Preview again to choose the next move." }
     }
 }

@@ -17,6 +17,11 @@ enum MovementMode: String, Codable, CaseIterable, Identifiable {
 }
 
 struct Preferences: Codable, Equatable {
+    var desktopClickMode: DesktopClickBehavior? = nil
+    var desktopClickBehavior: DesktopClickBehavior {
+        get { desktopClickMode ?? .keepBright }
+        set { desktopClickMode = newValue }
+    }
     var dockIcon: Bool? = nil
     var showsDockIcon: Bool { get { dockIcon ?? false } set { dockIcon = newValue } }
     var movementOverrides: [String: DisplayMovementSettings]? = nil

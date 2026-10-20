@@ -1,3 +1,15 @@
+# Version 1.1.0 — Live layout, retained previews and independent guards
+
+- Version 1.1.0, build 40. The user confirmed the build 38 features work as expected and authorised release after adding Dock/panel manual actions.
+- All 138 automated tests passed on the final source. New cases cover retaining exact preview destinations across polling, unrelated-display isolation, stale geometry/obstacle/settings/group/source rejection, desktop-click preference migration and persistence, monitor-local bright holds, independent 5/10-second dimming delays on an active desktop, instant-dimming target selection/disconnection/local interaction and Dock menu safety availability.
+- Overview refreshes geometry while open. The shared-coordinate map retains negative display coordinates and shows current focus and proposed destinations. Preview proposals are retained per display; stale proposals are cleared. Warning snapshots exclude the app's transient panels, and geometry/group changes cancel pending movement during the countdown as well as at execution.
+- Movement and dimming have independent runtime controls; both start paused. Pausing dimming hides overlays without changing effect settings. Separate indicators and matching menu-panel/Dock commands are implemented.
+- Desktop clicks clear dimming only on the clicked monitor, with either a persistent bright hold until a window there is clicked or independent restarted window/display delays. Zero-delay settings retain their immediate behavior.
+- Universal app and DMG signed, notarised and stapled; Gatekeeper accepted the installed build as Notarized Developer ID. Prior app and settings backed up under `/private/tmp` before installation.
+- Installed build 38 UI verified separate Start/Pause buttons, independent light states, named desktop-click choices and the live LG-above-MacBook arrangement. The user subsequently confirmed these features work as expected.
+- Build 40 adds Dock Move now and Restore last move with existing warnings/checks, and Dock/panel Dim monitor now using a named dimming-display target. Manual dimming skips delays/fades, includes the focused application window, preserves app exclusions/control cut-outs, and clears on target interaction, restoration, pause or target removal. It does not reset another monitor's timers or temporary brightness-restoration hold. Control-arrow navigation and Finder virtual-desktop focus cannot clear another monitor's manual dim. Dimming guarding must be running.
+- Final build 40 app and DMG notarisation/stapling and signature verification passed. Gatekeeper accepted the installed app. The app was reopened with version 1.1.0 and both guards paused; settings retained. Dock action names and disabled availability are covered by automated menu construction tests; native Dock inspection timed out during this session, so no live menu-click result is claimed.
+
 # Version 1.0.0 — Official stable release
 
 - Promoted the complete, tested 0.1.35 feature set to version 1.0.0 (build 37).
