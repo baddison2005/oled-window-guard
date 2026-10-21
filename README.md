@@ -6,9 +6,11 @@ Automatically shift and rotate application windows to reduce how long content st
 
 A native macOS menu-bar app that periodically moves eligible windows on selected displays. Built with SwiftUI, AppKit, public Accessibility APIs and Core Graphics. No dependencies, screen capture, telemetry, window-title logging, private window-server APIs.
 
-**Stable release: 1.1.0.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+**Stable release: 1.1.1.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
 
 Version 1.1.0 adds a live monitor layout, retained movement previews, desktop-click dimming choices, independent movement/dimming guard controls, and quick Dock/panel actions.
+
+Version 1.1.1 fixes dimming across macOS Desktops (Spaces): switching Desktops restores brightness and restarts dimming delays on that monitor, while other monitors retain their dimming state.
 
 ## Download
 

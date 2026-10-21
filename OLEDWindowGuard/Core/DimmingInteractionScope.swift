@@ -15,15 +15,22 @@ struct DimmingInteractionScope {
         desktop = false
     }
     mutating func windowInteraction() { display = nil; desktop = false }
+    var isSpaceScoped: Bool { display != nil && !desktop }
 
-    func resolve(reported: CGRect?, fallback: CGRect?) -> (focused: CGRect?, scope: CGRect?) {
-        guard let display else { return (reported, reported ?? fallback) }
-        if !desktop, let reported, reported.intersects(display) { return (reported, reported) }
-        return (nil, display)
+    func resolve(reported: CGRect?, fallback: CGRect?) -> (focused: CGRect?, scope: CGRect?, restartTimers: Bool) {
+        guard let display else { return (reported, reported ?? fallback, false) }
+        if !desktop, let reported, reported.intersects(display) { return (reported, reported, false) }
+        // A newly active empty Space is eligible to dim after its fresh delays.
+        // An explicit desktop click still follows the user's separate click policy.
+        return (nil, display, !desktop)
     }
 }
 
 extension DimmingInteractionScope {
+    static func spaceFocus(reported: CGRect?, visibleWindows: [CGRect]) -> CGRect? {
+        guard let reported else { return nil }
+        return visibleWindows.contains { Geometry.close($0, reported, tolerance: 2) } ? reported : nil
+    }
     static func applicationFocus(reported: CGRect?, isFinder: Bool, visibleFinderWindows: [CGRect]) -> CGRect? {
         guard isFinder, let reported else { return reported }
         // Finder's AX desktop covers the entire virtual desktop but is absent from

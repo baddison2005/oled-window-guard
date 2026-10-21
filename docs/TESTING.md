@@ -65,3 +65,9 @@ For 0.1.7, enable **Keep adjacent similar-sized windows together** in Swap posit
 7. Pause dimming while movement stays active, then reverse. Confirm settings persist, brightness restores on pause, and the panel/Dock labels follow the corresponding guard. Retest Control–Option–Command–B and Space changes on another monitor.
 8. With dimming running, select a target in the panel and choose Dim monitor now. Verify its focused window and desktop dim immediately at the monitor level; another monitor remains unchanged. Interact on the other monitor, then on the dimmed monitor, to verify local cancellation. Check exclusions, Restore brightness, pause and target disconnection.
 9. Right-click the Dock icon: verify Move now starts the normal warning, Restore last move follows its safety checks, and unavailable actions are disabled. Dim monitor now should name the panel's selected dimming monitor and be disabled while dimming is paused.
+
+## Space dimming reset (1.1.1)
+
+- With LG dimming enabled, switch LG Desktops using Control-arrow and Mission Control. Brightness should restore for the transition; inactive windows should dim after fresh window delays. An empty Desktop, or a display with focus elsewhere, should dim after its display delay. A focused application window should remain bright normally.
+- Repeat after a keep-bright desktop click and after Dim monitor now; neither previous override should carry into a different Desktop.
+- Switch MacBook Desktops while LG is dimmed. LG should retain its existing delay/fade and brightness. Repeat after moving the pointer between the initial Control-arrow and completion of its animation.

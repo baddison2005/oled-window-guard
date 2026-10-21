@@ -1,3 +1,14 @@
+# Version 1.1.1 — Reset dimming on the changed monitor's Space
+
+- A Space change previously retained desktop-click overrides, eligibility timers and the old overlay. A keep-bright override could carry into subsequent Desktops, and a Space with no focused application window remained ineligible to dim.
+- Space changes now clear only the affected monitor's desktop override and manual dim, restore brightness briefly for the transition, restart its window/display timers, and retire its overlay so the new Space receives a fresh one. A newly active empty Space becomes eligible after the configured delays; a real focused window still follows normal focus rules.
+- During Space scope, stale Accessibility focus from a window absent from the visible window list is rejected. Control-arrow pins the target monitor briefly so a subsequent notification cannot reset another monitor merely because the pointer moved.
+- All 142 tests passed, including new-Desktop timer eligibility, stale focus rejection, monitor-local settling, removal of the old desktop hold and retention of another monitor's completed fade/delay.
+- The user confirmed LG Desktop switches restore brightness and dimming resumes after the configured delay, while MacBook Desktop switches leave LG dimming unchanged.
+- Version 1.1.1, build 41, approved by the user for the stable patch release.
+- Signed/notarised/stapled universal app and DMG passed validation. Installed build 41 with existing settings retained and both previously active guards resumed.
+- OWG and the standard Window Layouts source both built successfully with the installed macOS 27.0 SDK. Window Layouts was built into `build/window-layouts-sdk27-check` without modifying/installing that app. Host is macOS 26.6.2, so this is compilation evidence rather than a macOS 27 runtime certification.
+
 # Version 1.1.0 — Live layout, retained previews and independent guards
 
 - Version 1.1.0, build 40. The user confirmed the build 38 features work as expected and authorised release after adding Dock/panel manual actions.

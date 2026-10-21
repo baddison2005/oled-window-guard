@@ -16,6 +16,8 @@ final class DimmingPresenter {
     var hasInstantDimming: Bool { !instant.displays.isEmpty }
     private var clickBehavior: DesktopClickBehavior = .keepBright
     private var spaceTransitionActive = false
+    private var spaceRestore = SpaceDimmingRestore()
+    private var navigatingDisplay: (id: String, until: TimeInterval)?
     private var globalClicks: Any?
     private var localClicks: Any?
     init() {
@@ -31,7 +33,7 @@ final class DimmingPresenter {
     private func recordInteraction(_ event: NSEvent) {
         if event.type == .keyDown {
             // Capture Space navigation before transient Finder focus can reset timers.
-            if event.modifierFlags.contains(.control) && [123, 124].contains(event.keyCode) { spaceChanged(); return }
+            if event.modifierFlags.contains(.control) && [123, 124].contains(event.keyCode) { spaceChanged(initiating: true); return }
             if let focus = interactionWindowFrame() {
                 instant.interact(on: Set(desktop.displays().filter { $0.frame.intersects(focus) }.map(\.id)))
             }
@@ -73,10 +75,24 @@ final class DimmingPresenter {
         }
         return DimmingInteractionScope.applicationFocus(reported: reported, isFinder: true, visibleFinderWindows: visible)
     }
-    func spaceChanged() {
-        guard let point = CGEvent(source: nil)?.location,
-              let display = desktop.displays().first(where: { $0.frame.contains(point) }) else { return }
+    func spaceChanged(initiating: Bool = false) {
+        let displays = desktop.displays()
+        let now = ProcessInfo.processInfo.systemUptime
+        let pinned = !initiating && (navigatingDisplay?.until ?? 0) > now
+            ? displays.first { $0.id == navigatingDisplay?.id } : nil
+        guard let display = pinned ?? CGEvent(source: nil).flatMap({ event in displays.first { $0.frame.contains(event.location) } }) else { return }
+        if initiating { navigatingDisplay = (display.id, now + 2) }
         interaction.spaceChanged(on: display.frame)
+        desktopClicks.windowClicked(on: display.id)
+        instant.interact(on: [display.id])
+        runtimes[display.id] = nil
+        spaceRestore.restart(display.id, now: now)
+        // Recreate the overlay for the newly visible Space rather than reusing
+        // a panel whose WindowServer membership may still belong to the old one.
+        if let panel = panels.removeValue(forKey: display.id) {
+            Self.windowNumbers.remove(CGWindowID(panel.windowNumber))
+            panel.close()
+        }
     }
     func restoreBrightness() {
         hide()
@@ -145,6 +161,14 @@ final class DimmingPresenter {
                       let bounds = item[kCGWindowBounds as String] as? [String: Any] else { return nil }
                 return CGRect(dictionaryRepresentation: bounds as CFDictionary)
             })
+        if interaction.isSpaceScoped {
+            focused = DimmingInteractionScope.spaceFocus(reported: focused, visibleWindows: list.compactMap { item in
+                guard (item[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == front.processIdentifier,
+                      item[kCGWindowLayer as String] as? Int == 0,
+                      let bounds = item[kCGWindowBounds as String] as? [String: Any] else { return nil }
+                return CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            })
+        }
         let resolved = interaction.resolve(reported: focused, fallback: lastFocus)
         focused = resolved.focused
         if let current = focused { lastFocus = current }
@@ -164,11 +188,17 @@ final class DimmingPresenter {
         }
         for display in displays {
             guard p.dimmingDisplays.contains(display.id) else { panels[display.id]?.orderOut(nil); runtimes[display.id] = nil; continue }
+            if spaceRestore.isRestoring(display.id, now: now) {
+                runtimes[display.id] = nil
+                panels[display.id]?.orderOut(nil)
+                continue
+            }
             let settings = p.dimmingSettings(for: display.id)
             let immediate = instant.contains(display.id)
+            let newEmptySpace = resolved.restartTimers && (scope?.intersects(display.frame) ?? false)
             let eligibility = desktopClicks.eligibility(on: display.id,
-                windows: DimmingFocusScope.dimsWindows(on: display.frame, focused: focused, desktopScope: desktopScope),
-                display: !(scope.map { $0.intersects(display.frame) } ?? false))
+                windows: newEmptySpace || DimmingFocusScope.dimsWindows(on: display.frame, focused: focused, desktopScope: desktopScope),
+                display: newEmptySpace || !(scope.map { $0.intersects(display.frame) } ?? false))
             let dimWindowsHere = eligibility.windows
             var runtime = runtimes[display.id] ?? DisplayDimmingRuntime()
             let eligibleWindows = Set(list.compactMap { item -> String? in
