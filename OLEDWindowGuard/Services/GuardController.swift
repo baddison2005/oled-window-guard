@@ -37,6 +37,7 @@ final class GuardController: ObservableObject {
     @Published private(set) var lastMove: Date?
     @Published private(set) var movedCount = 0
     @Published private(set) var canUndo = false
+    @Published private(set) var lastMovedDisplay: DisplayInfo?
     @Published private(set) var loginEnabled = SMAppService.mainApp.status == .enabled
     @Published private(set) var preview: MovementPlan?
     @Published private(set) var dimmingStatus = "Dimming is off."
@@ -63,6 +64,12 @@ final class GuardController: ObservableObject {
         snapshot.displays.first { $0.id == manualDimmingDisplayID }?.name ?? "No dimming display selected"
     }
     var canDimMonitorNow: Bool { dimmingRunning && trusted && !suspended && !updateInProgress && manualDimmingDisplayID != nil }
+    var menuCommands: GuardMenuCommands {
+        GuardMenuCommands(displays: snapshot.displays, movementIDs: preferences.selectedDisplays,
+            dimmingIDs: preferences.dimmingDisplays, movementRunning: running, dimmingRunning: dimmingRunning,
+            operational: trusted && !suspended, busy: busy, warning: warningActive, updating: updateInProgress,
+            lastMovedDisplay: lastMovedDisplay, canUndo: canUndo)
+    }
     private var movementSchedule = DisplayMovementSchedule()
     private var operationSettings: Preferences?
     private var operationDisplayID: String?
@@ -204,6 +211,27 @@ final class GuardController: ObservableObject {
         status = dimmingRunning ? "Dimming guarding started. Enabled effects follow their activation delays." : "Dimming guarding paused. Brightness restored."
     }
 
+    func pauseAllGuarding() {
+        guard !busy, !updateInProgress else { return }
+        running = false
+        dimmingRunning = false
+        dimming.hide()
+        updateDimming()
+        cancelPending(message: "All guarding paused. Brightness restored; movement and dimming settings retained.")
+    }
+
+    func performMenuAction(_ action: GuardMenuCommand.Action) {
+        switch action {
+        case .pauseAll: pauseAllGuarding()
+        case .move(let id): moveSoon(on: id)
+        case .dim(let id): dimMonitorsNow(requested: [id])
+        case .dimAll: dimMonitorsNow(requested: preferences.dimmingDisplays)
+        case .restoreBrightness(let id): restoreBrightness(on: id)
+        case .restoreAllBrightness: restoreBrightness()
+        case .restoreLastMove: restoreLastMove()
+        }
+    }
+
     func showPreview() {
         guard !busy, !warningActive else { return }
         refresh()
@@ -219,19 +247,27 @@ final class GuardController: ObservableObject {
         status = preview?.reason ?? ""
     }
 
-    func moveSoon() {
+    func moveSoon(on displayID: String? = nil) {
         guard !warningActive, !busy else { return }
         refresh()
-        guard ready() else { return }
-        prepareOperation(displayID: manualMovementDisplayID)
+        // Menu commands pin their UUID. A disconnected/deselected target must never fall back to another monitor.
+        if displayID != nil && !movementActive { return }
+        let target = displayID ?? manualMovementDisplayID
+        guard preferences.selectedDisplays.contains(target), snapshot.displays.contains(where: { $0.id == target }) else {
+            status = "Move unavailable: that monitor is disconnected or movement is disabled."
+            return
+        }
+        prepareOperation(displayID: target)
+        guard ready() else { operationSettings = nil; operationDisplayID = nil; return }
         beginWarning()
     }
 
     func skip() { cancelPending(message: "Move skipped. The next interval starts now.") }
 
     func restoreLastMove() {
-        guard !busy, !updateInProgress, let undo else { return }
+        guard !busy, !warningActive, !updateInProgress, let undo else { return }
         refresh()
+        guard trusted, !suspended else { return }
         let ids = Set(undo.0.moves.map(\.windowID))
         let affectedDisplays = Set(undo.1.displays.map(\.id))
         let current = snapshot.restricted(to: affectedDisplays)
@@ -281,16 +317,32 @@ final class GuardController: ObservableObject {
             : "Global shortcut is disabled. Restore brightness remains available in the menu."
     }
     func restoreBrightness() {
+        guard !updateInProgress else { return }
         dimming.restoreBrightness()
         updateDimming()
         status = "Brightness restored on dimming displays. Activation delays restarted."
     }
 
+    func restoreBrightness(on displayID: String) {
+        guard !updateInProgress, preferences.dimmingDisplays.contains(displayID),
+              let display = desktop.displays().first(where: { $0.id == displayID }) else { return }
+        dimming.restoreBrightness(on: [displayID])
+        updateDimming()
+        status = "Brightness restored on \(display.name). Only this monitor's dimming delays restarted."
+    }
+
     func dimMonitorNow() {
         guard canDimMonitorNow, let id = manualDimmingDisplayID else { return }
-        dimming.dimNow(on: id)
+        dimMonitorsNow(requested: [id])
+    }
+
+    private func dimMonitorsNow(requested: Set<String>) {
+        guard dimmingRunning, desktop.trusted, !suspended, !updateInProgress else { return }
+        let targets = desktop.displays().filter { requested.contains($0.id) && preferences.dimmingDisplays.contains($0.id) }
+        guard !targets.isEmpty else { return }
+        for display in targets { dimming.dimNow(on: display.id) }
         updateDimming()
-        status = "Dimmed \(manualDimmingDisplayName), including its windows. Interact on that display or use Restore brightness to clear it."
+        status = "Dimmed \(targets.map(\.name).joined(separator: ", ")), including their windows. Interact on a monitor or use Restore brightness to clear it."
     }
 
     private func updateDimming() {
@@ -509,6 +561,7 @@ final class GuardController: ObservableObject {
                                            steps: completed.reversed().map(\.reversed), reason: "Restore last move")
                 undoMovementSettings = movementPreferences
                 undo = (inverse, after, pending.handles)
+                lastMovedDisplay = after.displays.first { $0.id == self.operationDisplayID }
                 canUndo = true
             }
             lastMove = Date()

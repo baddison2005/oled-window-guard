@@ -1,5 +1,17 @@
 # Validation checklist
 
+## Version 1.2.0 monitor menu checks
+
+1. Enable the Dock icon in About. Compare the Dock right-click menu and menu-bar panel: both should offer Pause all guarding, Move now, Dim now, Restore brightness, and one Restore last move action.
+2. Start movement and dimming with different monitor selections. Move now must list only connected movement monitors while movement guarding runs; Dim now must list only connected dimming monitors while dimming guarding runs. Check a second monitor of the same model: names must be distinguishable and targets must remain correct after screen reordering or reconnection.
+3. Preview on monitor A, then choose Move now on A from each menu: unchanged arrangements should use the retained preview. Choose monitor B and confirm only B moves while the Overview target remains A. During a countdown, Move now and Restore last move must be unavailable; Pause all guarding must cancel the warning and restore brightness.
+4. Dim one monitor, then dim all available monitors. Confirm each uses its own display level and includes its windows, while exclusions remain bright. Only selected dimming monitors should be affected.
+5. Restore brightness on one monitor while another is dimmed or partway through its delay/fade. Confirm only the chosen monitor brightens and restarts delays. Test Restore all and the global shortcut, then check desktop-click and Space-change isolation still work.
+6. Move windows on A, then B. The single Restore last move action must name B and restore only B after its warning. Disconnect B: restore must be disabled and must never redirect to A or another monitor with the same name.
+7. Pause dimming: its Dim now choices should disappear/become unavailable, but brightness restoration should remain available. Pause movement: its Move now choices should disappear/become unavailable. Pause all must preserve settings, and movement must never be interrupted halfway through a placement by the menu action.
+8. Use Dim now on the MacBook display, then left-click and right-click several Dock icons (including OWG), open submenus, cancel a menu, and choose movement/dimming commands. Dock controls must not clear the manual dim merely by being clicked. Clicking inside a real application window, clicking empty desktop or choosing Restore brightness must still clear it. Repeat with a left/right-positioned or auto-hidden Dock and confirm other monitors retain their dimming.
+9. With automatic whole-display dimming and Dim now, confirm the Dock dims along with the rest of that monitor, including magnified icons and an auto-hidden Dock when revealed. Context menus and OWG controls must remain readable, and clicks must pass through the overlay. Window-only dimming must leave the Dock bright. Check warning/Skip panels remain visible during whole-display dimming.
+
 ## Automated
 
 Run `./Scripts/test.sh`. The XCTest suite verifies:

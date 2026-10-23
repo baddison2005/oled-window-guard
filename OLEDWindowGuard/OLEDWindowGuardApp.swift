@@ -54,37 +54,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        controller.refresh()
         let menu = NSMenu()
         for (title, action) in [("Open OLED Window Guard…", #selector(showWindow)),
                                 (controller.running ? "Pause movement" : "Start movement", #selector(toggleGuarding)),
-                                (controller.dimmingRunning ? "Pause dimming" : "Start dimming", #selector(toggleDimming)),
-                                ("Restore brightness", #selector(restoreBrightness))] {
+                                (controller.dimmingRunning ? "Pause dimming" : "Start dimming", #selector(toggleDimming))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
             if action == #selector(toggleGuarding) { item.isEnabled = !controller.busy && !controller.updateInProgress }
             if action == #selector(toggleDimming) { item.isEnabled = !controller.updateInProgress }
             item.target = self; menu.addItem(item)
         }
-        menu.addItem(.separator())
-        for (title, action, enabled) in [
-            ("Move now…", #selector(moveNow), !controller.busy && !controller.warningActive && !controller.updateInProgress && controller.trusted),
-            ("Restore last move…", #selector(restoreMove), controller.canUndo && !controller.busy && !controller.warningActive && !controller.updateInProgress),
-            ("Dim monitor now — \(controller.manualDimmingDisplayName)", #selector(dimMonitorNow), controller.canDimMonitorNow)
-        ] {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-            item.target = self; item.isEnabled = enabled
-            if action == #selector(moveNow) { item.toolTip = "Starts the advance warning, then applies the next safe move on the display selected in Overview." }
-            if action == #selector(dimMonitorNow) { item.toolTip = "Immediately dims this display and its application windows using its display dimming level. Start dimming first." }
-            menu.addItem(item)
-        }
+        appendMonitorCommands(to: menu, commands: controller.menuCommands)
         menu.autoenablesItems = false
         return menu
     }
+
+    func appendMonitorCommands(to menu: NSMenu, commands: GuardMenuCommands) {
+        func item(_ command: GuardMenuCommand) -> NSMenuItem {
+            let item = NSMenuItem(title: command.title, action: #selector(performMonitorCommand(_:)), keyEquivalent: "")
+            item.target = self; item.isEnabled = command.enabled
+            item.toolTip = command.help; item.representedObject = command.id
+            return item
+        }
+        func submenu(_ title: String, commands: [GuardMenuCommand], all: GuardMenuCommand? = nil) {
+            let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let children = NSMenu(title: title)
+            children.autoenablesItems = false
+            for command in commands { children.addItem(item(command)) }
+            if let all {
+                if !commands.isEmpty { children.addItem(.separator()) }
+                children.addItem(item(all))
+            }
+            parent.submenu = children
+            parent.isEnabled = commands.contains(where: \.enabled) || all?.enabled == true
+            menu.addItem(parent)
+        }
+        menu.addItem(item(commands.pauseAll))
+        menu.addItem(.separator())
+        submenu("Move now…", commands: commands.moves)
+        submenu("Dim now", commands: commands.dims, all: commands.dimAll)
+        submenu("Restore brightness", commands: commands.restores, all: commands.restoreAll)
+        menu.addItem(item(commands.restoreLastMove))
+    }
+
+    @objc private func performMonitorCommand(_ sender: NSMenuItem) {
+        guard let action = sender.representedObject as? GuardMenuCommand.Action else { return }
+        controller.performMenuAction(action)
+    }
     @objc private func toggleGuarding() { controller.toggleRunning() }
     @objc private func toggleDimming() { controller.toggleDimming() }
-    @objc private func restoreBrightness() { controller.restoreBrightness() }
-    @objc private func moveNow() { controller.moveSoon() }
-    @objc private func restoreMove() { controller.restoreLastMove() }
-    @objc private func dimMonitorNow() { controller.dimMonitorNow() }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -106,9 +124,8 @@ private struct GuardMenu: View {
             GuardStatusLights(model: controller)
             Button(controller.running ? "Pause movement" : "Start movement") { controller.toggleRunning() }.disabled(controller.busy || controller.updateInProgress)
             Button(controller.dimmingRunning ? "Pause dimming" : "Start dimming") { controller.toggleDimming() }.disabled(controller.updateInProgress)
+            MonitorCommandMenus(controller: controller)
             if controller.warningActive { Button("Skip this move") { controller.skip() } }
-            Button("Move after warning…") { controller.moveSoon() }.disabled(controller.busy || controller.warningActive)
-            Button("Restore last move…") { controller.restoreLastMove() }.disabled(!controller.canUndo || controller.busy || controller.warningActive || controller.updateInProgress)
             Divider()
             Text("Default movement: \(controller.preferences.mode.title)").font(.caption.weight(.semibold))
             Picker("Movement type", selection: $controller.preferences.mode) {
@@ -125,24 +142,12 @@ private struct GuardMenu: View {
                     Button("Preview on \(display.name)") {
                         controller.movementDisplayID = display.id; controller.showPreview(); showWindow()
                     }.disabled(!controller.preferences.selectedDisplays.contains(display.id))
-                    Button("Move after warning on \(display.name)") {
-                        controller.movementDisplayID = display.id; controller.moveSoon()
-                    }.disabled(!controller.preferences.selectedDisplays.contains(display.id))
                 }.disabled(controller.busy || controller.warningActive || controller.updateInProgress)
             }
             Toggle("Window dimming: \(controller.preferences.dimUnfocusedWindows ? "On" : "Off")", isOn: $controller.preferences.dimUnfocusedWindows)
             Toggle("Display dimming: \(controller.preferences.dimInactiveDisplays ? "On" : "Off")", isOn: $controller.preferences.dimInactiveDisplays)
             Text(controller.dimmingStatus).font(.caption).foregroundStyle(.secondary)
-            Picker("Display for Dim monitor now", selection: $controller.dimmingDisplayID) {
-                Text("First selected dimming display").tag("")
-                ForEach(controller.snapshot.displays.filter { controller.preferences.dimmingDisplays.contains($0.id) }) { display in
-                    Text(display.name).tag(display.id)
-                }
-            }
-            Button("Dim monitor now — \(controller.manualDimmingDisplayName)") { controller.dimMonitorNow() }
-                .disabled(!controller.canDimMonitorNow)
-            Text("Start dimming first. Dims the selected monitor and its windows immediately at its display dimming level, skipping delays and fades. Interact on that monitor or Restore brightness to clear it. App exclusions and OWG controls stay bright.").font(.caption).foregroundStyle(.secondary)
-            Button("Restore brightness · ⌃⌥⌘B") { controller.restoreBrightness() }
+            Text("Dim now includes that monitor's windows at its display dimming level, skipping delays and fades. App exclusions and OWG controls stay bright. Restore brightness restarts delays on the chosen monitor; ⌃⌥⌘B restores all monitors.").font(.caption).foregroundStyle(.secondary)
             Text("Dimming follows its own Start/Pause control and activation delays, independently of movement.").font(.caption).foregroundStyle(.secondary)
             Divider()
             Button("Open OLED Window Guard…", action: showWindow)
@@ -150,5 +155,33 @@ private struct GuardMenu: View {
         }
         .padding(18)
         }.frame(width: 370, height: 650)
+        .onAppear { controller.refresh() }
+    }
+}
+
+private struct MonitorCommandMenus: View {
+    @ObservedObject var controller: GuardController
+    private func commandButton(_ command: GuardMenuCommand) -> some View {
+        Button(command.title) { controller.performMenuAction(command.id) }
+            .disabled(!command.enabled).help(command.help)
+    }
+    var body: some View {
+        let commands = controller.menuCommands
+        commandButton(commands.pauseAll)
+        Menu("Move now…") {
+            ForEach(commands.moves) { commandButton($0) }
+        }.disabled(!commands.moves.contains(where: \.enabled))
+            .help("Choose a monitor with movement guarding running. Starts the warning before moving.")
+        Menu("Dim now") {
+            ForEach(commands.dims) { commandButton($0) }
+            if !commands.dims.isEmpty { Divider() }
+            commandButton(commands.dimAll)
+        }.disabled(!commands.dimAll.enabled)
+        Menu("Restore brightness") {
+            ForEach(commands.restores) { commandButton($0) }
+            if !commands.restores.isEmpty { Divider() }
+            commandButton(commands.restoreAll)
+        }.disabled(!commands.restoreAll.enabled)
+        commandButton(commands.restoreLastMove)
     }
 }

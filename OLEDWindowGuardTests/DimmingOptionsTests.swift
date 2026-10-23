@@ -43,10 +43,20 @@ final class DimmingOptionsTests: XCTestCase {
     }
     func testRestoreMinimumAndRepeatedRestore() {
         var restore = BrightnessRestore()
-        restore.restore(now:100)
-        XCTAssertTrue(restore.isActive(now:104.9)); XCTAssertFalse(restore.isActive(now:105))
-        restore.restore(now:104)
-        XCTAssertTrue(restore.isActive(now:108)); XCTAssertFalse(restore.isActive(now:109))
+        restore.restore(on:["lg"], now:100)
+        XCTAssertTrue(restore.isActive(on:"lg", now:104.9)); XCTAssertFalse(restore.isActive(on:"lg", now:105))
+        restore.restore(on:["lg"], now:104)
+        XCTAssertTrue(restore.isActive(on:"lg", now:108)); XCTAssertFalse(restore.isActive(on:"lg", now:109))
+    }
+    func testMonitorRestoreCannotExtendAnotherMonitorsBrightHold() {
+        var restore = BrightnessRestore()
+        restore.restore(on:["lg", "laptop"], now:100)
+        restore.restore(on:["laptop"], now:104)
+        XCTAssertFalse(restore.isActive(on:"lg", now:106))
+        XCTAssertTrue(restore.isActive(on:"laptop", now:106))
+        restore.retain(["lg"])
+        XCTAssertFalse(restore.isActive(on:"laptop", now:106))
+        XCTAssertFalse(restore.isActive(on:"unselected", now:102))
     }
     func testRestoreResetsDelayAndPreservesLongerWait() {
         var runtime = DisplayDimmingRuntime()

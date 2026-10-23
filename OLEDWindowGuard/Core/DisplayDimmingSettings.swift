@@ -45,7 +45,10 @@ struct DisplayDimmingRuntime {
 }
 
 struct BrightnessRestore {
-    private(set) var until: TimeInterval = 0
-    mutating func restore(now: TimeInterval) { until = now + 5 }
-    func isActive(now: TimeInterval) -> Bool { now < until }
+    private var deadlines: [String: TimeInterval] = [:]
+    mutating func restore(on ids: Set<String>, now: TimeInterval) {
+        for id in ids { deadlines[id] = now + 5 }
+    }
+    mutating func retain(_ ids: Set<String>) { deadlines = deadlines.filter { ids.contains($0.key) } }
+    func isActive(on id: String, now: TimeInterval) -> Bool { now < (deadlines[id] ?? 0) }
 }

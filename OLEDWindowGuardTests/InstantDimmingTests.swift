@@ -29,7 +29,8 @@ final class InstantDimmingTests: XCTestCase {
         let menu = delegate.applicationDockMenu(NSApplication.shared)!
         XCTAssertNotNil(menu.items.first { $0.title == "Move now…" })
         XCTAssertEqual(menu.items.first { $0.title == "Restore last move…" }?.isEnabled,false)
-        XCTAssertEqual(menu.items.first { $0.title.hasPrefix("Dim monitor now") }?.isEnabled,false)
+        XCTAssertEqual(menu.items.first { $0.title == "Dim now" }?.isEnabled,false)
+        XCTAssertEqual(menu.items.first { $0.title == "Pause all guarding" }?.isEnabled,false)
         XCTAssertNotNil(menu.items.first { $0.title == "Start movement" })
         XCTAssertNotNil(menu.items.first { $0.title == "Start dimming" })
         XCTAssertFalse(menu.autoenablesItems)

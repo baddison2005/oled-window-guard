@@ -6,11 +6,13 @@ Automatically shift and rotate application windows to reduce how long content st
 
 A native macOS menu-bar app that periodically moves eligible windows on selected displays. Built with SwiftUI, AppKit, public Accessibility APIs and Core Graphics. No dependencies, screen capture, telemetry, window-title logging, private window-server APIs.
 
-**Stable release: 1.1.1.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
+**Stable release: 1.2.0.** Geometry and lifecycle logic have automated tests; the real Accessibility permission flow and application-specific behavior also require the manual checks in [docs/TESTING.md](docs/TESTING.md).
 
 Version 1.1.0 adds a live monitor layout, retained movement previews, desktop-click dimming choices, independent movement/dimming guard controls, and quick Dock/panel actions.
 
 Version 1.1.1 fixes dimming across macOS Desktops (Spaces): switching Desktops restores brightness and restarts dimming delays on that monitor, while other monitors retain their dimming state.
+
+Version 1.2.0 adds matching per-monitor movement and brightness actions to the Dock and menu-bar panel, plus Pause all guarding. Whole-display dimming includes the Dock, and clicking Dock icons or their menus preserves dimming.
 
 ## Download
 
@@ -122,7 +124,15 @@ Add app-specific dimming exclusions to keep those apps’ visible windows bright
 
 In 1.1.0, **Start movement / Pause movement** and **Start dimming / Pause dimming** are independent controls at the top of the app, in the menu-bar panel and in the Dock menu. Separate status lights show each guard as Active, Waiting or Paused. Both guards start paused after launch; saved selections, effect switches and dimming settings are preserved. Pausing dimming restores brightness; pausing movement leaves dimming under its own control.
 
-The Dock menu also offers **Move now…** (starts the advance warning on the movement display selected in Overview) and **Restore last move…**, with the same validation and safety checks as the dashboard. The Dock and menu-bar panel offer **Dim monitor now** while dimming guarding is running. Choose its target independently with **Display for Dim monitor now** in the panel; the action names the selected monitor. It immediately applies that monitor's display-dimming level to the screen and its windows, including the focused window, skipping activation delays and fades. App exclusions and OWG controls stay bright. Interaction on that monitor, Pause dimming or Restore brightness clears the manual dim; activity on other monitors does not. Disconnected or deselected dimming displays are removed from the manual dim state.
+The Dock menu and menu-bar panel provide the same monitor actions:
+
+- **Pause all guarding:** pause movement and dimming, cancel a pending warning, and restore brightness. Saved settings are retained.
+- **Move now… → monitor:** start the advance warning for a connected monitor with movement guarding running. The same preview retention, activity checks and safe-placement validation apply as in Overview. This does not change the display selected in Overview.
+- **Dim now → monitor / Dim all available monitors:** immediately apply each selected monitor's display-dimming level to its screen and windows, including its focused window, skipping activation delays and fades. Dimming guarding must be running. App exclusions and OWG controls stay bright. Dock icon clicks and Dock context menus preserve the manual dim; clicks inside an application window or on empty desktop, typing in an application, explicit restoration or pausing dimming clear it. Activity on another monitor does not clear the manual dim.
+- **Restore brightness → monitor / Restore brightness on all available monitors:** clear manual and automatic dimming and restart activation delays, with a five-second minimum bright period. Restoring one monitor leaves other monitors' dimming and timers alone. Restore remains available while dimming guarding is paused.
+- **Restore last move — monitor…:** restore the last successfully moved monitor's preceding arrangement after a warning and safety checks. There is one restore history entry; a successful move on another monitor replaces it.
+
+“Available” means connected monitors selected for the relevant guard. Movement and dimming selections are independent. Actions use display UUIDs with readable monitor names, rather than connection types or screen order. Identical names are distinguished by display ID. Disconnecting a monitor removes its actions; a stale menu action never redirects to another monitor. The Overview display selectors remain available for manual preview/movement and instant dimming.
 
 The Dimming page also offers two behaviors for an empty-desktop click:
 
@@ -132,7 +142,7 @@ The Dimming page also offers two behaviors for an empty-desktop click:
 
 The Dimming page offers independent switches and 0–90% darkness controls for unfocused application windows and displays with no focused window. Both default off. Each effect has an independent 0–600 second activation delay (default zero). Window timers start when individual windows lose focus; display timers start when a selected display has no focused window. Regaining focus clears the effect and resets its timer. Clicking empty desktop space clears dimming on that display without resetting other displays. Space changes no longer clear dimming globally. Separate fade-in sliders offer 0–3 seconds in half-second steps after each activation delay; focus restores brightness promptly. The menu-bar panel offers a movement picker showing the selected mode and On/Off toggles for each dimming effect. Dimming monitors are selected on the Dimming page, independently of movement. These features run independently of the movement timer, including while movement is paused, and enabled settings persist across launches.
 
-Overlays pass clicks through and refresh focus/geometry every half-second. Window dimming covers visible background-window rectangles, subtracting foreground windows to avoid double dimming. Whole-display dimming takes precedence when both modes apply. A focused window spanning displays keeps both displays out of whole-display dimming. OLED Window Guard controls and system panels are kept clear. Movement exclusions do not apply to dimming.
+Overlays pass clicks through and refresh focus/geometry every half-second. Window dimming covers visible background-window rectangles, subtracting foreground windows to avoid double dimming. Whole-display dimming takes precedence when both modes apply and includes the Dock; window-only dimming leaves the Dock unchanged. A focused window spanning displays keeps both displays out of whole-display dimming. OLED Window Guard controls, context menus and other system panels are kept clear. Movement exclusions do not apply to dimming.
 
 Dimming stays active through warnings, movement and restores, tracking moving windows and fades every 0.05 seconds without resetting their activation delays. Warning controls remain clear. Dimming suspends during sleep, inactive sessions, updates, missing Accessibility permission. Overlays are excluded from movement snapshots and disappear when the app quits. Amounts describe black-overlay opacity, not calibrated brightness or hardware settings. Rounded corners, shadows, transparency and unusual app/window layers may differ from rectangular bounds; rapid changes can take one polling interval to update. No screen images or keystrokes are captured.
 
@@ -199,4 +209,4 @@ See [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md). The App Sandbox is intentional
 
 Expired per-display deadlines remain absolute, so automatic movement advances into its warning instead of stalling at zero. Overview lists why windows are excluded, including overlaps, maximised windows and app exclusions. Swap positions needs two eligible windows; use Shift position for a lone window.
 
-Expand a display in the menu-bar panel to enable movement, adjust its custom settings, preview or move after warning. About includes an optional Dock icon; click it to open settings, or right-click for guarding and brightness commands.
+Expand a display in the menu-bar panel to enable movement, adjust its custom settings or preview. Use **Move now…** to choose a guarded monitor for movement after a warning. About includes an optional Dock icon; click it to open settings, or right-click for the same guarding and monitor commands.
