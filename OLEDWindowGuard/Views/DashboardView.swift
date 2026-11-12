@@ -334,6 +334,12 @@ struct DashboardView: View {
             settingsCard {
                 Text("Before every move").font(.headline)
                 numberRow("Advance warning", value: $model.preferences.warningSeconds, range: 3...60, unit: "seconds")
+                Picker("Warning position", selection: $model.preferences.warningPosition) {
+                    ForEach(WarningPosition.allCases) { position in
+                        Text(position.title).tag(position)
+                    }
+                }
+                Text("Random chooses a new spot for each warning. On shorter displays, it varies the horizontal position and keeps the warning fully visible.").font(.caption).foregroundStyle(.secondary)
                 Toggle("Play a gentle sound when the warning starts", isOn: $model.preferences.soundEnabled)
                 Toggle("Also send a macOS notification", isOn: Binding(get: { model.preferences.systemNotifications }, set: model.setNotifications))
                 Text("A notice with a Skip button appears on each affected display. System notifications may be silenced by Focus; the on-screen notice remains available.").font(.caption).foregroundStyle(.secondary)

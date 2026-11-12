@@ -49,6 +49,11 @@ struct Preferences: Codable, Equatable {
     var selectedDisplays: Set<String> = []
     var intervalMinutes: Double = 10
     var warningSeconds: Double = 10
+    var warningPositionID: String? = nil
+    var warningPosition: WarningPosition {
+        get { WarningPosition(rawValue: warningPositionID ?? "") ?? .topRight }
+        set { warningPositionID = newValue.rawValue }
+    }
     var mode: MovementMode = .drift
     var automaticDistance = true
     var distancePixels: Double = 16

@@ -13,9 +13,11 @@ final class WarningPresenter {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
     }
 
-    func show(count: Int, seconds: Int, displays: Set<String>, quietSeconds: Double, sound: Bool, notify: Bool, cancel: @escaping () -> Void) {
+    func show(count: Int, seconds: Int, displays: Set<String>, position: WarningPosition, quietSeconds: Double,
+              sound: Bool, notify: Bool, cancel: @escaping () -> Void) {
         dismiss()
         let all = DesktopService().displays()
+        var rng = SystemRandomNumberGenerator()
         for (index, screen) in NSScreen.screens.enumerated() where index < all.count && displays.contains(all[index].id) {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 220),
                                 styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
@@ -28,7 +30,8 @@ final class WarningPresenter {
             panel.isReleasedWhenClosed = false
             panel.animationBehavior = .none
             panel.contentView = NSHostingView(rootView: WarningCard(count: count, deadline: Date().addingTimeInterval(Double(seconds)), quietSeconds: quietSeconds, cancel: cancel))
-            panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.maxX - 444, y: screen.visibleFrame.maxY - 244))
+            panel.setFrameOrigin(position.origin(for: panel.frame.size, screenFrame: screen.frame,
+                                                 visibleFrame: screen.visibleFrame, rng: &rng))
             panel.orderFrontRegardless()
             panels.append(panel)
             Self.windowNumbers.insert(CGWindowID(panel.windowNumber))

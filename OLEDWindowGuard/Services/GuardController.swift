@@ -443,7 +443,7 @@ final class GuardController: ObservableObject {
             : "\(plan.windowCount) windows will move after the warning. Skip at any time."
         status += " " + ActivityPolicy.explanation(quietSeconds: preferences.quietSeconds)
         warnings.show(count: plan.windowCount, seconds: Int(preferences.warningSeconds), displays: affectedDisplays,
-                      quietSeconds: preferences.quietSeconds,
+                      position: preferences.warningPosition, quietSeconds: preferences.quietSeconds,
                       sound: preferences.soundEnabled, notify: preferences.systemNotifications) { [weak self] in self?.skip() }
     }
 
